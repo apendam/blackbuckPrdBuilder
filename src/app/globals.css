@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+:root {
+  --bb-bg: #0a0a0b;
+  --bb-panel: #111113;
+  --bb-surface: #17171a;
+  --bb-border: #2a2a2e;
+  --bb-border-subtle: #1c1c20;
+  --bb-text: #f2f2f3;
+  --bb-text-secondary: #a1a1a8;
+  --bb-text-tertiary: #6b6b72;
+  --bb-red: #e0293e;
+  --bb-red-hover: #c9202f;
+  --bb-red-dim: #4a1a20;
+  --bb-green: #3fb950;
+}
+
+@theme inline {
+  --color-bb-bg: var(--bb-bg);
+  --color-bb-panel: var(--bb-panel);
+  --color-bb-surface: var(--bb-surface);
+  --color-bb-border: var(--bb-border);
+  --color-bb-border-subtle: var(--bb-border-subtle);
+  --color-bb-text: var(--bb-text);
+  --color-bb-text-secondary: var(--bb-text-secondary);
+  --color-bb-text-tertiary: var(--bb-text-tertiary);
+  --color-bb-red: var(--bb-red);
+  --color-bb-red-hover: var(--bb-red-hover);
+  --color-bb-red-dim: var(--bb-red-dim);
+  --color-bb-green: var(--bb-green);
+}
+
+body {
+  background: var(--bb-bg);
+  color: var(--bb-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
