@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { KNOWN_REPOS } from "./repoList";
 
 // Points at the worktree with this session's Pass 1/2 population work.
 // Once claude/prd-builder-pass1-pass2 is pushed and merged, this should
@@ -15,21 +16,8 @@ const SKILL_MD_PATH = path.join(
   ".prd-builder-worktree/.claude/skills/prd-builder/SKILL.md"
 );
 
-export const KNOWN_REPOS = [
-  "fms_toll",
-  "toll-gold",
-  "tzf-activation-web-sdk",
-  "tzf-ops-portal",
-  "tzf-fastag",
-  "tzf-full-kyc-sdk-web",
-  "TZF-portal",
-  "ppi-wallet",
-  "boss_help_desk",
-  "bb-supply-fo-android",
-  "blackbuck-pro-app",
-  "fms-inbound-payment",
-  "fms-outbound-payment-service",
-] as const;
+export { KNOWN_REPOS };
+export { WORKSPACE_ROOT };
 
 function resolveWithinRoot(root: string, relativePath: string): string {
   const resolved = path.resolve(root, relativePath);

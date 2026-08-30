@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { runChatTurn } from "@/lib/claude";
+import { getUserModelSettings } from "@/lib/modelSettings";
 import { ChatTurnRequest, ChatTurnResponse } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+
   let body: ChatTurnRequest;
   try {
     body = await req.json();
@@ -15,7 +22,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await runChatTurn(body.messages, body.phaseState);
+    const modelSettings = await getUserModelSettings(session.user.id);
+    const result = await runChatTurn(body.messages, body.phaseState, modelSettings);
     const responseBody: ChatTurnResponse = {
       reply: result.reply,
       phaseState: result.phaseState,

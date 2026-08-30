@@ -43,3 +43,8 @@ next-env.d.ts
 
 # generated PRD output (not source)
 data/prds/*.md
+
+# prisma
+/prisma/*.db
+/prisma/*.db-journal
+/src/generated/

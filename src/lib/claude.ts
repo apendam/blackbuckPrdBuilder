@@ -15,9 +15,13 @@ import {
   PHASES,
   Phase,
 } from "./types";
+import { AVAILABLE_MODELS, PhaseModelSetting } from "./modelSettings";
 
-const MODEL = "claude-opus-5";
 const MAX_TOOL_ROUNDS = 12;
+
+function modelSupportsEffort(model: string): boolean {
+  return AVAILABLE_MODELS.find((m) => m.id === model)?.supportsEffort ?? false;
+}
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -112,7 +116,8 @@ export interface ChatTurnResult {
 
 export async function runChatTurn(
   history: ChatMessage[],
-  currentPhaseState: PhaseState
+  currentPhaseState: PhaseState,
+  modelSettings: Record<Phase, PhaseModelSetting>
 ): Promise<ChatTurnResult> {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error(
@@ -130,12 +135,16 @@ export async function runChatTurn(
   let finalText = "";
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    // Re-derived every round: if update_phase_progress fires mid-loop, the
+    // very next round already uses the new phase's configured model/effort.
+    const { model, effort } = modelSettings[phaseState.current];
     const response = await client.messages.create({
-      model: MODEL,
+      model,
       max_tokens: 4096,
       system: buildSystemPrompt(),
       tools,
       messages,
+      ...(modelSupportsEffort(model) ? { output_config: { effort } } : {}),
     });
 
     const toolUseBlocks = response.content.filter(
