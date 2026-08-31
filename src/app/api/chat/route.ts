@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
 
   const nextMessages: ChatMessage[] = [
     ...conversation.messages,
-    { role: "user", content: body.message },
+    { role: "user", content: body.message, attachments: body.attachments },
   ];
 
   try {
@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
     await saveConversationTurn(userId, conversation.id, finalMessages, result.phaseState, {
       title: result.title,
       verticals: result.verticals,
+      skeletonSections: result.skeletonSections,
       savedPrd: result.savedPrd,
       googleDocUrl: result.googleDocUrl,
     });
@@ -62,6 +63,7 @@ export async function POST(req: NextRequest) {
       reply: result.reply,
       phaseState: result.phaseState,
       title: result.title,
+      skeletonSections: result.skeletonSections,
       savedPrd: result.savedPrd,
       googleDocUrl: result.googleDocUrl,
     };

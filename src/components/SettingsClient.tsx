@@ -8,7 +8,7 @@ import {
   ClaudeModel,
   Effort,
   PhaseModelSetting,
-} from "@/lib/modelSettings";
+} from "@/lib/modelSettingsShared";
 import { PHASES, PHASE_LABELS, Phase } from "@/lib/types";
 
 export function SettingsClient({

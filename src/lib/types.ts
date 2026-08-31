@@ -1,8 +1,25 @@
 export type Role = "user" | "assistant";
 
+export interface Attachment {
+  name: string;
+  mediaType: string; // e.g. "application/pdf", "image/png", "text/plain"
+  base64: string; // raw file bytes, base64-encoded, no data-URL prefix
+}
+
 export interface ChatMessage {
   role: Role;
   content: string;
+  attachments?: Attachment[];
+}
+
+export interface SkeletonPointer {
+  id: string;
+  text: string;
+}
+
+export interface SkeletonSection {
+  heading: string;
+  pointers: SkeletonPointer[];
 }
 
 export const PHASES = [
@@ -83,12 +100,14 @@ export interface PhaseLogEntry {
 export interface ChatTurnRequest {
   conversationId: string;
   message: string;
+  attachments?: Attachment[];
 }
 
 export interface ChatTurnResponse {
   reply: string;
   phaseState: PhaseState;
   title?: string;
+  skeletonSections?: SkeletonSection[];
   savedPrd?: { path: string };
   googleDocUrl?: string;
 }

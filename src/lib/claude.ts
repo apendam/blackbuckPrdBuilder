@@ -15,6 +15,8 @@ import {
   INITIAL_PHASE_STATE,
   PHASES,
   Phase,
+  Attachment,
+  SkeletonSection,
 } from "./types";
 import { AVAILABLE_MODELS, PhaseModelSetting } from "./modelSettings";
 
@@ -25,6 +27,61 @@ function modelSupportsEffort(model: string): boolean {
 }
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+const TEXT_DECODABLE_PREFIXES = ["text/", "application/json"];
+
+function isImage(mediaType: string): boolean {
+  return mediaType.startsWith("image/");
+}
+
+function isTextDecodable(mediaType: string): boolean {
+  return TEXT_DECODABLE_PREFIXES.some((p) => mediaType.startsWith(p));
+}
+
+// Attached API docs / flow descriptions (phase 5) become real content blocks
+// -- PDFs and images go in as Anthropic document/image blocks (so the model
+// actually reads diagrams/screenshots, not just a filename), plain-text
+// files get decoded and inlined into the text block. Order follows
+// Anthropic's own guidance: documents/images before the text describing them.
+function buildMessageContent(message: ChatMessage): string | Anthropic.ContentBlockParam[] {
+  const attachments = message.attachments ?? [];
+  if (attachments.length === 0) {
+    return message.content;
+  }
+
+  const blocks: Anthropic.ContentBlockParam[] = [];
+  let inlineText = "";
+
+  for (const att of attachments) {
+    if (att.mediaType === "application/pdf") {
+      blocks.push({
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data: att.base64 },
+      });
+    } else if (isImage(att.mediaType)) {
+      blocks.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: att.mediaType as "image/png" | "image/jpeg" | "image/gif" | "image/webp",
+          data: att.base64,
+        },
+      });
+    } else if (isTextDecodable(att.mediaType)) {
+      try {
+        const text = Buffer.from(att.base64, "base64").toString("utf-8");
+        inlineText += `\n\n--- Attached file: ${att.name} ---\n${text}\n--- end ${att.name} ---`;
+      } catch {
+        inlineText += `\n\n[Could not decode attached file: ${att.name}]`;
+      }
+    } else {
+      inlineText += `\n\n[Attached file "${att.name}" (${att.mediaType}) -- unsupported type, not included]`;
+    }
+  }
+
+  blocks.push({ type: "text", text: message.content + inlineText });
+  return blocks;
+}
 
 const tools: Anthropic.Tool[] = [
   {
@@ -158,6 +215,32 @@ const tools: Anthropic.Tool[] = [
       required: ["verticals"],
     },
   },
+  {
+    name: "save_skeleton",
+    description:
+      "Save the current skeleton as structured sections/pointers, at phase 6 (initial draft) and again after every phase 7 revision. This drives the PM's skeleton editor UI -- always call this instead of (or in addition to) describing the skeleton in chat text, so the PM can comment on/delete/add individual pointers directly rather than only replying in prose. Send the FULL current skeleton every time, not a diff.",
+    input_schema: {
+      type: "object",
+      properties: {
+        sections: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              heading: { type: "string", description: "Section heading, e.g. 'Objective', 'Product Features & Workflow'" },
+              pointers: {
+                type: "array",
+                items: { type: "string" },
+                description: "Short bullet-point lines under this heading -- the 1-3 sentence skeleton content, or sub-points once expanded",
+              },
+            },
+            required: ["heading", "pointers"],
+          },
+        },
+      },
+      required: ["sections"],
+    },
+  },
 ];
 
 function isKnownPhase(value: string): value is Phase {
@@ -169,8 +252,15 @@ export interface ChatTurnResult {
   phaseState: PhaseState;
   title?: string;
   verticals?: string[];
+  skeletonSections?: SkeletonSection[];
   savedPrd?: { path: string };
   googleDocUrl?: string;
+}
+
+let skeletonIdCounter = 0;
+function nextSkeletonId(): string {
+  skeletonIdCounter += 1;
+  return `p${Date.now()}_${skeletonIdCounter}`;
 }
 
 export async function runChatTurn(
@@ -188,12 +278,13 @@ export async function runChatTurn(
 
   const messages: Anthropic.MessageParam[] = history.map((m) => ({
     role: m.role,
-    content: m.content,
+    content: buildMessageContent(m),
   }));
 
   let phaseState: PhaseState = currentPhaseState;
   let title: string | undefined;
   let verticals: string[] | undefined;
+  let skeletonSections: SkeletonSection[] | undefined;
   let savedPrd: { path: string } | undefined;
   let googleDocUrl: string | undefined;
   let finalText = "";
@@ -268,6 +359,25 @@ export async function runChatTurn(
           result = "ok";
           break;
         }
+        case "save_skeleton": {
+          const rawSections = Array.isArray(input.sections) ? input.sections : [];
+          skeletonSections = rawSections
+            .filter(
+              (s): s is { heading: unknown; pointers: unknown } =>
+                typeof s === "object" && s !== null
+            )
+            .map((s) => ({
+              heading: String((s as { heading?: unknown }).heading ?? "Untitled section"),
+              pointers: (Array.isArray((s as { pointers?: unknown }).pointers)
+                ? (s as { pointers: unknown[] }).pointers
+                : []
+              )
+                .filter((p): p is string => typeof p === "string")
+                .map((text) => ({ id: nextSkeletonId(), text })),
+            }));
+          result = "ok";
+          break;
+        }
         case "save_prd_markdown": {
           const content = String(input.content ?? "");
           const path = savePrdMarkdown(conversationId, content);
@@ -311,7 +421,7 @@ export async function runChatTurn(
     messages.push({ role: "user", content: toolResults });
   }
 
-  return { reply: finalText, phaseState, title, verticals, savedPrd, googleDocUrl };
+  return { reply: finalText, phaseState, title, verticals, skeletonSections, savedPrd, googleDocUrl };
 }
 
 export { INITIAL_PHASE_STATE };

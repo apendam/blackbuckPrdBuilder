@@ -1,5 +1,12 @@
 import { prisma } from "./prisma";
-import { ChatMessage, Phase, PhaseState, PHASES, PhaseLogEntry } from "./types";
+import {
+  ChatMessage,
+  Phase,
+  PhaseState,
+  PHASES,
+  PhaseLogEntry,
+  SkeletonSection,
+} from "./types";
 import type { Conversation } from "@/generated/prisma";
 
 export interface ConversationView {
@@ -11,6 +18,7 @@ export interface ConversationView {
   messages: ChatMessage[];
   verticals: string[];
   phaseLog: PhaseLogEntry[];
+  skeletonSections: SkeletonSection[];
   notes: string;
   prdMarkdownPath: string | null;
   googleDocUrl: string | null;
@@ -39,6 +47,7 @@ function toView(row: Conversation): ConversationView {
   const messages = parseJsonArray<ChatMessage>(row.messages);
   const verticals = parseJsonArray<string>(row.verticals);
   const phaseLog = parseJsonArray<PhaseLogEntry>(row.phaseLog);
+  const skeletonSections = parseJsonArray<SkeletonSection>(row.skeletonSections);
   const currentPhase = isKnownPhase(row.currentPhase) ? row.currentPhase : "objective";
 
   return {
@@ -50,6 +59,7 @@ function toView(row: Conversation): ConversationView {
     messages,
     verticals,
     phaseLog,
+    skeletonSections,
     notes: row.notes,
     prdMarkdownPath: row.prdMarkdownPath,
     googleDocUrl: row.googleDocUrl,
@@ -110,6 +120,7 @@ export async function saveConversationTurn(
   extra: {
     title?: string;
     verticals?: string[];
+    skeletonSections?: SkeletonSection[];
     savedPrd?: { path: string };
     googleDocUrl?: string;
   } = {}
@@ -131,6 +142,7 @@ export async function saveConversationTurn(
       phaseLog: JSON.stringify(phaseLog),
       ...(extra.title ? { title: extra.title } : {}),
       ...(extra.verticals ? { verticals: JSON.stringify(extra.verticals) } : {}),
+      ...(extra.skeletonSections ? { skeletonSections: JSON.stringify(extra.skeletonSections) } : {}),
       ...(extra.savedPrd ? { prdMarkdownPath: extra.savedPrd.path } : {}),
       ...(extra.googleDocUrl ? { googleDocUrl: extra.googleDocUrl } : {}),
       ...(isOutputPhase ? { status: "completed", completedAt: new Date() } : {}),
@@ -171,6 +183,7 @@ export async function createRevision(
       completedPhases: JSON.stringify(PHASES.slice(0, PHASES.indexOf("skeleton_revision"))),
       messages: parent.messages,
       verticals: parent.verticals,
+      skeletonSections: parent.skeletonSections,
       version: parent.version + 1,
       parentId: parent.id,
     },

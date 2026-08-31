@@ -71,12 +71,33 @@ function Prose({ content, invert }: { content: string; invert?: boolean }) {
   );
 }
 
+function AttachmentChips({ attachments, invert }: { attachments: NonNullable<ChatMessageType["attachments"]>; invert?: boolean }) {
+  if (attachments.length === 0) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {attachments.map((a) => (
+        <span
+          key={a.name}
+          className={`rounded-full border px-2 py-0.5 text-[11px] ${
+            invert
+              ? "border-bb-bg/20 text-bb-bg/70"
+              : "border-bb-border text-bb-text-tertiary"
+          }`}
+        >
+          📎 {a.name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function ChatMessage({ message }: { message: ChatMessageType }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
         <div className="max-w-[70%] rounded-2xl rounded-tr-sm bg-bb-text px-4 py-3">
           <Prose content={message.content} invert />
+          <AttachmentChips attachments={message.attachments ?? []} invert />
         </div>
       </div>
     );

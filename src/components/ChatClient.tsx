@@ -7,6 +7,7 @@ import { PhaseStepper } from "@/components/PhaseStepper";
 import { ChatMessage as ChatMessageBubble } from "@/components/ChatMessage";
 import { ChatInput } from "@/components/ChatInput";
 import { RefreshReposModal } from "@/components/RefreshReposModal";
+import { SkeletonEditor } from "@/components/SkeletonEditor";
 import {
   ChatMessage,
   ChatTurnResponse,
@@ -14,6 +15,8 @@ import {
   Phase,
   PHASES,
   PHASE_LABELS,
+  Attachment,
+  SkeletonSection,
 } from "@/lib/types";
 
 const PHASE_HEADLINE: Record<Phase, string> = {
@@ -32,6 +35,7 @@ export function ChatClient({
   conversationId,
   initialMessages,
   initialPhaseState,
+  initialSkeletonSections,
   initialSavedPrd,
   initialGoogleDocUrl,
   userName,
@@ -41,6 +45,7 @@ export function ChatClient({
   conversationId: string;
   initialMessages: ChatMessage[];
   initialPhaseState: PhaseState;
+  initialSkeletonSections: SkeletonSection[];
   initialSavedPrd: string | null;
   initialGoogleDocUrl: string | null;
   userName?: string | null;
@@ -49,6 +54,9 @@ export function ChatClient({
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [phaseState, setPhaseState] = useState<PhaseState>(initialPhaseState);
+  const [skeletonSections, setSkeletonSections] = useState<SkeletonSection[]>(
+    initialSkeletonSections
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedPrdPath, setSavedPrdPath] = useState<string | null>(initialSavedPrd);
@@ -57,14 +65,14 @@ export function ChatClient({
   const kickedOff = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  async function sendTurn(message: string) {
+  async function sendTurn(message: string, attachments: Attachment[] = []) {
     setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, message }),
+        body: JSON.stringify({ conversationId, message, attachments }),
       });
       const data: ChatTurnResponse & { error?: string } = await res.json();
       if (!res.ok) {
@@ -72,10 +80,11 @@ export function ChatClient({
       }
       setMessages((prev) => [
         ...prev,
-        { role: "user", content: message },
+        { role: "user", content: message, attachments },
         { role: "assistant", content: data.reply },
       ]);
       setPhaseState(data.phaseState);
+      if (data.skeletonSections) setSkeletonSections(data.skeletonSections);
       if (data.savedPrd) setSavedPrdPath(data.savedPrd.path);
       if (data.googleDocUrl) setGoogleDocUrl(data.googleDocUrl);
     } catch (err) {
@@ -94,13 +103,12 @@ export function ChatClient({
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
-
-  function handleSend(text: string) {
-    sendTurn(text);
-  }
+  }, [messages, skeletonSections]);
 
   const phaseIndex = PHASES.indexOf(phaseState.current);
+  const showSkeletonEditor =
+    skeletonSections.length > 0 &&
+    (phaseState.current === "skeleton_draft" || phaseState.current === "skeleton_revision");
 
   return (
     <div className="flex h-screen flex-col">
@@ -130,43 +138,59 @@ export function ChatClient({
             </Link>
           </div>
 
-          <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-8 py-6">
-            {messages.map((m, i) => (
-              <ChatMessageBubble key={i} message={m} />
-            ))}
-            {loading && <div className="text-xs text-bb-text-tertiary">PRD Builder is thinking…</div>}
-            {error && (
-              <div className="rounded-lg border border-bb-red bg-bb-red-dim px-4 py-3 text-sm text-bb-text">
-                {error}
-              </div>
-            )}
-            {savedPrdPath && (
-              <div className="rounded-lg border border-bb-green/40 bg-bb-surface px-4 py-3 text-sm text-bb-text">
-                <div>
-                  PRD saved: <code className="text-bb-text-secondary">{savedPrdPath}</code>
+          <div ref={scrollRef} className="flex-1 overflow-y-auto">
+            <div className="space-y-4 px-8 py-6">
+              {messages.map((m, i) => (
+                <ChatMessageBubble key={i} message={m} />
+              ))}
+              {loading && (
+                <div className="text-xs text-bb-text-tertiary">PRD Builder is thinking…</div>
+              )}
+              {error && (
+                <div className="rounded-lg border border-bb-red bg-bb-red-dim px-4 py-3 text-sm text-bb-text">
+                  {error}
                 </div>
-                {googleDocUrl && (
-                  <div className="mt-1">
-                    <a
-                      href={googleDocUrl}
-                      target="_blank"
-                      rel="noreferrer"
+              )}
+              {savedPrdPath && (
+                <div className="rounded-lg border border-bb-green/40 bg-bb-surface px-4 py-3 text-sm text-bb-text">
+                  <div>
+                    PRD saved: <code className="text-bb-text-secondary">{savedPrdPath}</code>
+                  </div>
+                  {googleDocUrl && (
+                    <div className="mt-1">
+                      <a
+                        href={googleDocUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-bb-red underline underline-offset-2"
+                      >
+                        Open Google Doc ↗
+                      </a>
+                    </div>
+                  )}
+                  <div className="mt-2">
+                    <Link
+                      href={`/prd/${conversationId}`}
                       className="text-bb-red underline underline-offset-2"
                     >
-                      Open Google Doc ↗
-                    </a>
+                      View finished PRD →
+                    </Link>
                   </div>
-                )}
-                <div className="mt-2">
-                  <Link href={`/prd/${conversationId}`} className="text-bb-red underline underline-offset-2">
-                    View finished PRD →
-                  </Link>
                 </div>
-              </div>
+              )}
+            </div>
+
+            {showSkeletonEditor && (
+              <SkeletonEditor
+                sections={skeletonSections}
+                disabled={loading}
+                onSubmitFeedback={(text) => sendTurn(text)}
+                onApprove={() => sendTurn("The skeleton looks good — please expand it into the full PRD.")}
+              />
             )}
           </div>
 
-          <ChatInput onSend={handleSend} disabled={loading} />
+          <ChatInput onSend={sendTurn} disabled={loading} />
         </main>
       </div>
 

@@ -31,6 +31,7 @@ export default async function ChatPage({
         current: conversation.currentPhase,
         completed: conversation.completedPhases,
       }}
+      initialSkeletonSections={conversation.skeletonSections}
       initialSavedPrd={conversation.prdMarkdownPath}
       initialGoogleDocUrl={conversation.googleDocUrl}
       userName={session.user.name}
