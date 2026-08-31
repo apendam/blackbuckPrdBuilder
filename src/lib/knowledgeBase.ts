@@ -101,11 +101,17 @@ export function listRepoFiles(repo: string, relativePath: string): string {
   return entries.join("\n");
 }
 
-export function savePrdMarkdown(kebabTitle: string, content: string): string {
+// Keyed by conversation ID, not title -- two versions of "the same" PRD
+// (see createRevision in conversations.ts) can share a title without one
+// version's file clobbering another's.
+export function savePrdMarkdown(conversationId: string, content: string): string {
   const prdsDir = path.join(WORKSPACE_ROOT, "prd-builder-chatbot", "data", "prds");
   fs.mkdirSync(prdsDir, { recursive: true });
-  const safeTitle = kebabTitle.replace(/[^a-z0-9-]/gi, "-").toLowerCase();
-  const filePath = path.join(prdsDir, `${safeTitle}.md`);
+  const filePath = path.join(prdsDir, `${conversationId}.md`);
   fs.writeFileSync(filePath, content, "utf-8");
   return filePath;
+}
+
+export function readPrdMarkdown(filePath: string): string {
+  return fs.readFileSync(filePath, "utf-8");
 }

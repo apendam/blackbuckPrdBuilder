@@ -8,6 +8,7 @@ import {
   savePrdMarkdown,
   KNOWN_REPOS,
 } from "./knowledgeBase";
+import { createGoogleDoc } from "./googleDocs";
 import {
   ChatMessage,
   PhaseState,
@@ -90,16 +91,71 @@ const tools: Anthropic.Tool[] = [
     },
   },
   {
-    name: "save_prd_markdown",
+    name: "set_title",
     description:
-      "Save the finished PRD as a Markdown file, once the full PRD (phase 8) is confirmed ready and you've reached phase 9's output step. There is no Google Doc integration yet -- this is the only output mechanism.",
+      "Set a short human-readable title for this PRD, as soon as the objective (phase 1) is clear enough to name it -- e.g. 'FASTag Hotlist Replacement Bypass'. Call again later if the scope changes enough that the title no longer fits. Used for the drafts/completed-PRDs dashboard, not shown to the PM as a chat message.",
     input_schema: {
       type: "object",
       properties: {
-        kebab_title: { type: "string", description: "Kebab-case filename-safe title, e.g. 'fastag-hotlist-bypass'" },
+        title: { type: "string", description: "Short human-readable title, not kebab-case" },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "save_prd_markdown",
+    description:
+      "Save the finished PRD as a Markdown file, once the full PRD (phase 8) is confirmed ready and you've reached phase 9's output step. Always call this AND create_google_doc at phase 9 -- they're the two required outputs, not alternatives.",
+    input_schema: {
+      type: "object",
+      properties: {
         content: { type: "string", description: "Full PRD content in Markdown" },
       },
-      required: ["kebab_title", "content"],
+      required: ["content"],
+    },
+  },
+  {
+    name: "create_google_doc",
+    description:
+      "Create a Google Doc with the finished PRD content, at phase 9's output step. Always call this AND save_prd_markdown -- they're the two required outputs, not alternatives. If this fails (e.g. the PM hasn't granted Docs access), tell the PM plainly and still keep the Markdown output -- don't treat a Doc failure as blocking.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Google Doc title, human-readable" },
+        content: { type: "string", description: "Full PRD content in Markdown -- converted to Doc formatting" },
+      },
+      required: ["title", "content"],
+    },
+  },
+  {
+    name: "set_verticals",
+    description:
+      "Record the confirmed vertical scope from phase 4, once the PM has confirmed it (after the system-map reverification step). Used for search/filtering on the drafts and completed-PRDs dashboard. Call again if scope changes later.",
+    input_schema: {
+      type: "object",
+      properties: {
+        verticals: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: [
+              "Sales",
+              "Toll",
+              "Fuel",
+              "TZF",
+              "Payments",
+              "GPS",
+              "Supply",
+              "Load Board",
+              "Finserve",
+              "Frontend",
+              "Android",
+              "BB Pro",
+            ],
+          },
+        },
+      },
+      required: ["verticals"],
     },
   },
 ];
@@ -111,13 +167,18 @@ function isKnownPhase(value: string): value is Phase {
 export interface ChatTurnResult {
   reply: string;
   phaseState: PhaseState;
-  savedPrd?: { title: string; path: string };
+  title?: string;
+  verticals?: string[];
+  savedPrd?: { path: string };
+  googleDocUrl?: string;
 }
 
 export async function runChatTurn(
   history: ChatMessage[],
   currentPhaseState: PhaseState,
-  modelSettings: Record<Phase, PhaseModelSetting>
+  modelSettings: Record<Phase, PhaseModelSetting>,
+  userId: string,
+  conversationId: string
 ): Promise<ChatTurnResult> {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error(
@@ -131,7 +192,10 @@ export async function runChatTurn(
   }));
 
   let phaseState: PhaseState = currentPhaseState;
-  let savedPrd: { title: string; path: string } | undefined;
+  let title: string | undefined;
+  let verticals: string[] | undefined;
+  let savedPrd: { path: string } | undefined;
+  let googleDocUrl: string | undefined;
   let finalText = "";
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -192,12 +256,46 @@ export async function runChatTurn(
           result = "ok";
           break;
         }
+        case "set_title": {
+          title = String(input.title ?? "").slice(0, 200) || undefined;
+          result = "ok";
+          break;
+        }
+        case "set_verticals": {
+          verticals = Array.isArray(input.verticals)
+            ? input.verticals.filter((v): v is string => typeof v === "string")
+            : undefined;
+          result = "ok";
+          break;
+        }
         case "save_prd_markdown": {
-          const title = String(input.kebab_title ?? "untitled-prd");
           const content = String(input.content ?? "");
-          const path = savePrdMarkdown(title, content);
-          savedPrd = { title, path };
+          const path = savePrdMarkdown(conversationId, content);
+          savedPrd = { path };
           result = `Saved to ${path}`;
+          break;
+        }
+        case "create_google_doc": {
+          const docTitle = String(input.title ?? title ?? "Untitled PRD");
+          const content = String(input.content ?? "");
+          try {
+            const doc = await createGoogleDoc(userId, docTitle, content);
+            googleDocUrl = doc.url;
+            const notes: string[] = [];
+            if (doc.hadTables) {
+              notes.push(
+                "tables were rendered as monospace text blocks, not native Docs tables"
+              );
+            }
+            if (doc.hadMermaid) {
+              notes.push(
+                "Mermaid diagrams were inserted as raw source text (Docs can't render Mermaid) -- the Markdown copy has the real diagram"
+              );
+            }
+            result = `Created: ${doc.url}${notes.length ? " (note: " + notes.join("; ") + ")" : ""}`;
+          } catch (err) {
+            result = `ERROR creating Google Doc: ${err instanceof Error ? err.message : "unknown error"}. Tell the PM this failed but the Markdown copy still stands.`;
+          }
           break;
         }
         default:
@@ -213,7 +311,7 @@ export async function runChatTurn(
     messages.push({ role: "user", content: toolResults });
   }
 
-  return { reply: finalText, phaseState, savedPrd };
+  return { reply: finalText, phaseState, title, verticals, savedPrd, googleDocUrl };
 }
 
 export { INITIAL_PHASE_STATE };

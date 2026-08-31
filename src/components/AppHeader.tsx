@@ -59,6 +59,12 @@ export function AppHeader({
           </button>
         )}
         <Link
+          href="/knowledge-base"
+          className="rounded-full border border-bb-border bg-bb-surface px-3 py-1.5 text-xs text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
+        >
+          Knowledge Base
+        </Link>
+        <Link
           href="/settings"
           className="rounded-full border border-bb-border bg-bb-surface px-3 py-1.5 text-xs text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
         >

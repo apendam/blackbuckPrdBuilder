@@ -45,6 +45,7 @@ model User {
   accounts      Account[]
   sessions      Session[]
   modelSettings ModelSetting[]
+  conversations Conversation[]
 }
 
 model VerificationToken {
@@ -68,4 +69,33 @@ model ModelSetting {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, phase])
+}
+
+// One row per PRD-writing conversation, draft or completed. "Revise" on a
+// completed PRD creates a NEW row with parentId pointing at this one and
+// version incremented -- never edits the original in place.
+model Conversation {
+  id              String    @id @default(cuid())
+  userId          String
+  title           String?
+  status          String    @default("draft") // "draft" | "completed" | "archived"
+  currentPhase    String    @default("objective")
+  completedPhases String    @default("[]") // JSON-encoded Phase[]
+  messages        String    @default("[]") // JSON-encoded ChatMessage[]
+  verticals       String    @default("[]") // JSON-encoded string[], set via set_verticals at phase 4
+  phaseLog        String    @default("[]") // JSON-encoded {phase, at}[], one entry per phase transition
+  notes           String    @default("") // PM's own scratch notes, never sent to the model
+  prdMarkdownPath String?
+  googleDocUrl    String?
+  version         Int       @default(1)
+  parentId        String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  completedAt     DateTime?
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent    Conversation?  @relation("Revisions", fields: [parentId], references: [id])
+  revisions Conversation[] @relation("Revisions")
+
+  @@index([userId, status])
 }

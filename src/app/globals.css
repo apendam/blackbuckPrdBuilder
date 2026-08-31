@@ -35,3 +35,33 @@ body {
   color: var(--bb-text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
+
+/* PDF export: DocumentPanel prints, everything else (header, tabs, sidebar
+   chrome) is hidden. Triggered by window.print() from the PRD viewer.
+   The dark-theme tokens below are near-white text -- on white paper that's
+   invisible, so redefine them for light-on-white printing, not just the
+   container's own color (child elements' explicit var(--bb-text) etc. would
+   otherwise win over an inherited black). */
+@media print {
+  :root {
+    --bb-bg: #ffffff;
+    --bb-panel: #ffffff;
+    --bb-surface: #f4f4f5;
+    --bb-border: #d4d4d8;
+    --bb-border-subtle: #e4e4e7;
+    --bb-text: #18181b;
+    --bb-text-secondary: #3f3f46;
+    --bb-text-tertiary: #71717a;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .prd-print-area,
+  .prd-print-area * {
+    visibility: visible;
+  }
+  .prd-print-area {
+    position: absolute;
+    inset: 0;
+  }
+}
