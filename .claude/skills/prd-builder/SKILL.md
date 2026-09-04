@@ -50,7 +50,14 @@ Then ask the PM for two more things before moving on:
 Don't move to phase 6 until you have a working understanding of both, or the PM has explicitly told you to proceed without one of them.
 
 ### 6. Skeleton draft — STOP HERE
-Using `references/style/prd-skeleton.md` as the section template, produce **a skeleton only**: section headings, sub-headings, and a minimal (1-3 sentence) explanation of what will go in each section — not the full prose. Note in-line where a flowchart will be needed and where an API touchpoint will need the Success/Failure/Timeout treatment, but don't write either one out yet — that's phase 8's job.
+
+**First, ask the PM to pick a skeleton depth** — this is a distinct choice from Sizing (phase 3, which is about business impact, not documentation effort):
+- **Quick** — a single-pass skeleton, drafted directly (see below) and presented immediately.
+- **Thorough** — the same skeleton, but before it's presented, run one internal self-critique pass that hunts specifically for missed branches, missed API touchpoints, and missed edge cases. Ground this pass **only** in material you've already loaded — the vertical files, the system-map flow files, and the API docs/flow description gathered in phase 5. Never surface a "finding" that's just a plausible-sounding invented scenario with nothing backing it; an ungrounded edge case is worse than no edge case, because it looks like diligence while actually being a guess. Fold real findings into the skeleton as structural markers (an added sub-heading, an inline `[EDGE CASE: ...]` flag, an extra `[API: ...]` marker) — not as resolved prose explaining the edge case in full. The skeleton must stay a skeleton regardless of which depth you picked; "Thorough" makes it a more complete skeleton, not a partial draft.
+
+If the PM picks Quick but what you loaded in phases 4-5 clearly involves multiple verticals or a cross-repo touchpoint from the system map, say so once and ask if they still want Quick — don't silently override their choice, and don't silently ignore an obvious mismatch either.
+
+**Then draft the skeleton.** Using `references/style/prd-skeleton.md` as the section template, produce **a skeleton only**: section headings, sub-headings, and a minimal (1-3 sentence) explanation of what will go in each section — not the full prose. Note in-line where a flowchart will be needed and where an API touchpoint will need the Success/Failure/Timeout treatment, but don't write either one out yet — that's phase 8's job.
 
 Present the skeleton and stop there. Do not continue into full-PRD writing in the same turn.
 
