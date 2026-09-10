@@ -40,16 +40,35 @@ export async function refreshRepo(repo: string): Promise<RepoRefreshResult> {
     const shallow = await isShallow(repoDir);
     const branch = await git(["symbolic-ref", "--short", "-q", "HEAD"], repoDir);
 
-    const pullArgs = shallow
-      ? ["-c", "http.version=HTTP/1.1", "pull", "--depth=1", "origin", branch]
-      : ["-c", "http.version=HTTP/1.1", "pull", "--ff-only", "origin", branch];
-    await git(pullArgs, repoDir);
+    // These are read-only reference mirrors -- nothing is ever committed
+    // here, so there's no local history worth merging. A plain `pull`
+    // (fetch+merge) refuses outright the moment origin's branch has been
+    // force-pushed, since the local tip is no longer an ancestor of the new
+    // remote tip ("divergent branches, need to specify how to reconcile") --
+    // several of these repos' release-ci/main branches get force-pushed
+    // routinely. Fetch + hard-reset to the fetched tip is immune to that:
+    // origin is always authoritative for a mirror like this.
+    const dirty = (await git(["status", "--porcelain"], repoDir)) !== "";
+    if (dirty) {
+      await git(["stash", "push", "-u", "-m", "repoRefresh auto-stash before reset"], repoDir);
+    }
+    const fetchArgs = shallow
+      ? ["-c", "http.version=HTTP/1.1", "fetch", "--depth=1", "origin", branch]
+      : ["-c", "http.version=HTTP/1.1", "fetch", "origin", branch];
+    await git(fetchArgs, repoDir);
+    await git(["reset", "--hard", "FETCH_HEAD"], repoDir);
 
     const after = await git(["rev-parse", "HEAD"], repoDir);
     if (before === after) {
       return { repo, status: "up-to-date", detail: before.slice(0, 7) };
     }
-    const log = await git(["log", "--oneline", `${before}..${after}`], repoDir);
+    // A rewritten remote history means `before` may not be an ancestor of
+    // `after` at all, so a `before..after` range log can be a near-total
+    // history dump (or fail outright against a shallow boundary commit) --
+    // just show the tip movement instead of attempting a real range diff.
+    const log = shallow
+      ? ""
+      : await git(["log", "--oneline", `${before}..${after}`], repoDir).catch(() => "");
     return {
       repo,
       status: "updated",
@@ -57,7 +76,7 @@ export async function refreshRepo(repo: string): Promise<RepoRefreshResult> {
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
-    return { repo, status: "failed", detail: message.slice(0, 300) };
+    return { repo, status: "failed", detail: message.slice(0, 800) };
   }
 }
 

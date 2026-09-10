@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 
 export function AppHeader({
   userName,
@@ -20,6 +21,26 @@ export function AppHeader({
       .join("")
       .slice(0, 2)
       .toUpperCase() || "?";
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Click-to-toggle, not hover -- a hover menu closes the instant the
+  // cursor crosses the gap between the avatar and the dropdown on its way
+  // to an item, which is exactly the "options disappear" bug this replaces.
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuOpen]);
+
+  const menuItemClass =
+    "block w-full rounded-md px-2 py-1.5 text-left text-xs text-bb-text hover:bg-bb-surface";
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-bb-red-dim bg-bb-bg px-6 shrink-0">
@@ -58,30 +79,31 @@ export function AppHeader({
             Refresh repos
           </button>
         )}
-        <Link
-          href="/knowledge-base"
-          className="rounded-full border border-bb-border bg-bb-surface px-3 py-1.5 text-xs text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
-        >
-          Knowledge Base
-        </Link>
-        <Link
-          href="/settings"
-          className="rounded-full border border-bb-border bg-bb-surface px-3 py-1.5 text-xs text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
-        >
-          Settings
-        </Link>
-        <div className="group relative">
-          <div className="flex h-8 w-8 cursor-default items-center justify-center rounded-full bg-bb-surface text-xs font-medium text-bb-text">
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => setMenuOpen((o) => !o)}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-bb-surface text-xs font-medium text-bb-text hover:ring-2 hover:ring-bb-border"
+          >
             {initials}
-          </div>
-          <div className="invisible absolute right-0 top-10 z-10 w-48 rounded-md border border-bb-border bg-bb-panel p-2 opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100">
-            <div className="mb-2 truncate px-2 text-xs text-bb-text-secondary">{userEmail}</div>
-            <form action={signOutAction}>
-              <button className="w-full rounded-md px-2 py-1.5 text-left text-xs text-bb-text hover:bg-bb-surface">
-                Sign out
-              </button>
-            </form>
-          </div>
+          </button>
+          {menuOpen && (
+            <div className="absolute right-0 top-10 z-10 w-48 rounded-md border border-bb-border bg-bb-panel p-2 shadow-lg">
+              <div className="mb-2 truncate px-2 text-xs text-bb-text-secondary">{userEmail}</div>
+              <Link href="/knowledge-base" onClick={() => setMenuOpen(false)} className={menuItemClass}>
+                Knowledge Base
+              </Link>
+              <Link href="/cost-dashboard" onClick={() => setMenuOpen(false)} className={menuItemClass}>
+                Cost
+              </Link>
+              <Link href="/settings" onClick={() => setMenuOpen(false)} className={menuItemClass}>
+                Settings
+              </Link>
+              <div className="my-1 border-t border-bb-border" />
+              <form action={signOutAction}>
+                <button className={menuItemClass}>Sign out</button>
+              </form>
+            </div>
+          )}
         </div>
       </div>
     </header>

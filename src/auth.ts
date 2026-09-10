@@ -9,6 +9,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers: [
     Google({
+      // Safe here specifically because sign-in is already gated to
+      // @blackbuck.com in the callback below, and Google itself verifies the
+      // email -- there's no untrusted-provider account-takeover risk this
+      // guards against in a single-org internal tool. Needed because deleting
+      // a stale Account row (to force a fresh token/scope write -- see the
+      // comment on access_type/prompt below) leaves the User row in place,
+      // and NextAuth refuses by default to relink a new OAuth account to an
+      // existing User with the same email.
+      allowDangerousEmailAccountLinking: true,
       authorization: {
         params: {
           // access_type=offline + prompt=consent guarantee a refresh_token

@@ -3,6 +3,7 @@ import { markdownToDocsRequests } from "./markdownToDocsRequests";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const DOCS_API = "https://docs.googleapis.com/v1/documents";
+const DRIVE_API = "https://www.googleapis.com/drive/v3";
 
 class GoogleDocsError extends Error {}
 
@@ -106,4 +107,54 @@ export async function createGoogleDoc(
     hadTables,
     hadMermaid,
   };
+}
+
+export interface DocComment {
+  id: string;
+  content: string;
+  author: string;
+  resolved: boolean;
+  createdTime: string;
+}
+
+function extractDocId(docUrl: string): string | null {
+  const match = docUrl.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : null;
+}
+
+// Native Google Docs comments, read back via the Drive API so the PM can see
+// open review comments without leaving the app -- the `drive.file` scope
+// covers files this app created, which is the only kind of doc we ever pass
+// here. Comments themselves are still authored/resolved in the Doc; this is
+// read-only visibility, not a competing comment system.
+export async function getDocComments(userId: string, docUrl: string): Promise<DocComment[]> {
+  const fileId = extractDocId(docUrl);
+  if (!fileId) {
+    throw new GoogleDocsError("Could not parse a Google Doc ID from the saved URL.");
+  }
+  const accessToken = await getValidAccessToken(userId);
+  const res = await fetch(
+    `${DRIVE_API}/files/${fileId}/comments?fields=comments(id,content,resolved,author(displayName),createdTime)&pageSize=100`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!res.ok) {
+    const body = await res.text();
+    throw new GoogleDocsError(`Failed to fetch Doc comments: ${res.status} ${body}`);
+  }
+  const data = (await res.json()) as {
+    comments?: {
+      id: string;
+      content: string;
+      resolved?: boolean;
+      author?: { displayName?: string };
+      createdTime: string;
+    }[];
+  };
+  return (data.comments ?? []).map((c) => ({
+    id: c.id,
+    content: c.content,
+    author: c.author?.displayName ?? "Unknown",
+    resolved: c.resolved ?? false,
+    createdTime: c.createdTime,
+  }));
 }

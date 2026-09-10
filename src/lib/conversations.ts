@@ -6,6 +6,8 @@ import {
   PHASES,
   PhaseLogEntry,
   SkeletonSection,
+  SkeletonHistoryEntry,
+  VerificationFinding,
 } from "./types";
 import type { Conversation } from "@/generated/prisma";
 
@@ -19,6 +21,8 @@ export interface ConversationView {
   verticals: string[];
   phaseLog: PhaseLogEntry[];
   skeletonSections: SkeletonSection[];
+  skeletonHistory: SkeletonHistoryEntry[];
+  verificationFindings: VerificationFinding[];
   notes: string;
   prdMarkdownPath: string | null;
   googleDocUrl: string | null;
@@ -48,6 +52,8 @@ function toView(row: Conversation): ConversationView {
   const verticals = parseJsonArray<string>(row.verticals);
   const phaseLog = parseJsonArray<PhaseLogEntry>(row.phaseLog);
   const skeletonSections = parseJsonArray<SkeletonSection>(row.skeletonSections);
+  const skeletonHistory = parseJsonArray<SkeletonHistoryEntry>(row.skeletonHistory);
+  const verificationFindings = parseJsonArray<VerificationFinding>(row.verificationFindings);
   const currentPhase = isKnownPhase(row.currentPhase) ? row.currentPhase : "objective";
 
   return {
@@ -60,6 +66,8 @@ function toView(row: Conversation): ConversationView {
     verticals,
     phaseLog,
     skeletonSections,
+    skeletonHistory,
+    verificationFindings,
     notes: row.notes,
     prdMarkdownPath: row.prdMarkdownPath,
     googleDocUrl: row.googleDocUrl,
@@ -121,8 +129,10 @@ export async function saveConversationTurn(
     title?: string;
     verticals?: string[];
     skeletonSections?: SkeletonSection[];
+    skeletonHistory?: SkeletonHistoryEntry[];
     savedPrd?: { path: string };
     googleDocUrl?: string;
+    verificationFindings?: VerificationFinding[];
   } = {}
 ): Promise<ConversationView> {
   const existing = await prisma.conversation.findFirst({ where: { id, userId } });
@@ -143,8 +153,12 @@ export async function saveConversationTurn(
       ...(extra.title ? { title: extra.title } : {}),
       ...(extra.verticals ? { verticals: JSON.stringify(extra.verticals) } : {}),
       ...(extra.skeletonSections ? { skeletonSections: JSON.stringify(extra.skeletonSections) } : {}),
+      ...(extra.skeletonHistory ? { skeletonHistory: JSON.stringify(extra.skeletonHistory) } : {}),
       ...(extra.savedPrd ? { prdMarkdownPath: extra.savedPrd.path } : {}),
       ...(extra.googleDocUrl ? { googleDocUrl: extra.googleDocUrl } : {}),
+      ...(extra.verificationFindings
+        ? { verificationFindings: JSON.stringify(extra.verificationFindings) }
+        : {}),
       ...(isOutputPhase ? { status: "completed", completedAt: new Date() } : {}),
     },
   });
@@ -159,8 +173,40 @@ export async function setConversationStatus(
   await prisma.conversation.update({ where: { id, userId }, data: { status } });
 }
 
+// Lets the PM rename a PRD directly, independent of the drafting model's own
+// set_title tool call -- the model's title is often a fine starting point but
+// isn't the last word on it.
+export async function setConversationTitle(userId: string, id: string, title: string): Promise<void> {
+  await prisma.conversation.update({ where: { id, userId }, data: { title } });
+}
+
 export async function updateNotes(userId: string, id: string, notes: string): Promise<void> {
   await prisma.conversation.update({ where: { id, userId }, data: { notes } });
+}
+
+// Used by the manual "re-verify" action (POST /api/conversations/:id/verify)
+// -- separate from saveConversationTurn since a re-verify doesn't touch
+// messages/phaseState, just the findings.
+export async function saveVerificationFindings(
+  userId: string,
+  id: string,
+  findings: VerificationFinding[]
+): Promise<void> {
+  await prisma.conversation.update({
+    where: { id, userId },
+    data: { verificationFindings: JSON.stringify(findings) },
+  });
+}
+
+// Used by the manual "Export to Google Doc" action (POST
+// /api/conversations/:id/export-google-doc) -- separate from
+// saveConversationTurn since this doesn't touch messages/phaseState, just the
+// resulting doc URL.
+export async function setGoogleDocUrl(userId: string, id: string, url: string): Promise<void> {
+  await prisma.conversation.update({
+    where: { id, userId },
+    data: { googleDocUrl: url },
+  });
 }
 
 export async function deleteConversation(userId: string, id: string): Promise<void> {
@@ -184,6 +230,38 @@ export async function createRevision(
       messages: parent.messages,
       verticals: parent.verticals,
       skeletonSections: parent.skeletonSections,
+      skeletonHistory: parent.skeletonHistory,
+      version: parent.version + 1,
+      parentId: parent.id,
+    },
+  });
+  return toView(row);
+}
+
+// Like createRevision, but for line-level feedback on an already-completed
+// PRD rather than a skeleton do-over: lands in full_prd (not
+// skeleton_revision), doesn't carry forward prdMarkdownPath/googleDocUrl
+// (those are the OLD version's output -- this one gets fresh ones once the
+// model re-runs Phase 9 after revising). Requires the parent to actually
+// have a saved PRD; there's nothing to comment on otherwise.
+export async function createPrdRevision(
+  userId: string,
+  parentId: string
+): Promise<ConversationView | null> {
+  const parent = await prisma.conversation.findFirst({ where: { id: parentId, userId } });
+  if (!parent || !parent.prdMarkdownPath) return null;
+
+  const row = await prisma.conversation.create({
+    data: {
+      userId,
+      title: parent.title,
+      status: "draft",
+      currentPhase: "full_prd",
+      completedPhases: JSON.stringify(PHASES.slice(0, PHASES.indexOf("full_prd"))),
+      messages: parent.messages,
+      verticals: parent.verticals,
+      skeletonSections: parent.skeletonSections,
+      skeletonHistory: parent.skeletonHistory,
       version: parent.version + 1,
       parentId: parent.id,
     },

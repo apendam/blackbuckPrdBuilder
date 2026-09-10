@@ -1,4 +1,13 @@
-import { Phase } from "./types";
+import { Phase, Provider } from "./types";
+
+export const PROVIDERS: { id: Provider; label: string }[] = [
+  { id: "anthropic", label: "Anthropic" },
+  { id: "openrouter", label: "OpenRouter" },
+];
+
+export function isKnownProvider(value: string): value is Provider {
+  return PROVIDERS.some((p) => p.id === value);
+}
 
 // Client-safe: no Prisma/DB imports here, so client components (the
 // Settings page UI) can import this directly. See modelSettings.ts for the
@@ -54,20 +63,30 @@ export const AVAILABLE_MODELS: {
   },
 ];
 
-export type PhaseModelSetting = { model: ClaudeModel; effort: Effort };
+// `model` is a ClaudeModel string when provider is "anthropic"; an arbitrary
+// OpenRouter model slug (e.g. "openai/gpt-6-astra") otherwise -- OpenRouter's
+// catalog is dynamic (hundreds of models, searched live), so it can't be a
+// fixed union the way ClaudeModel is. `effort` only applies to Anthropic
+// today; OpenRouter phases just omit it.
+export interface PhaseModelSetting {
+  provider: Provider;
+  model: string;
+  effort?: Effort;
+}
 
 // Sensible starting point matching "lighter phases get lighter models,
 // research/full-PRD get the heaviest" -- fully overridable per-user in Settings.
 export const DEFAULT_MODEL_SETTINGS: Record<Phase, PhaseModelSetting> = {
-  objective: { model: "claude-sonnet-5", effort: "medium" },
-  problem_statement: { model: "claude-sonnet-5", effort: "medium" },
-  sizing: { model: "claude-sonnet-5", effort: "medium" },
-  scope: { model: "claude-sonnet-5", effort: "high" },
-  context_loading: { model: "claude-opus-5", effort: "high" },
-  skeleton_draft: { model: "claude-opus-5", effort: "high" },
-  skeleton_revision: { model: "claude-opus-5", effort: "high" },
-  full_prd: { model: "claude-opus-5", effort: "xhigh" },
-  output: { model: "claude-sonnet-5", effort: "medium" },
+  objective: { provider: "anthropic", model: "claude-sonnet-5", effort: "medium" },
+  problem_statement: { provider: "anthropic", model: "claude-sonnet-5", effort: "medium" },
+  sizing: { provider: "anthropic", model: "claude-sonnet-5", effort: "medium" },
+  scope: { provider: "anthropic", model: "claude-sonnet-5", effort: "high" },
+  context_loading: { provider: "anthropic", model: "claude-opus-5", effort: "high" },
+  skeleton_draft: { provider: "anthropic", model: "claude-opus-5", effort: "high" },
+  skeleton_revision: { provider: "anthropic", model: "claude-opus-5", effort: "high" },
+  full_prd: { provider: "anthropic", model: "claude-opus-5", effort: "xhigh" },
+  full_prd_verify: { provider: "anthropic", model: "claude-opus-5", effort: "high" },
+  output: { provider: "anthropic", model: "claude-sonnet-5", effort: "medium" },
 };
 
 export function isKnownModel(value: string): value is ClaudeModel {
@@ -76,4 +95,8 @@ export function isKnownModel(value: string): value is ClaudeModel {
 
 export function isKnownEffort(value: string): value is Effort {
   return (EFFORT_LEVELS as string[]).includes(value);
+}
+
+export function modelSupportsEffort(model: string): boolean {
+  return AVAILABLE_MODELS.find((m) => m.id === model)?.supportsEffort ?? false;
 }

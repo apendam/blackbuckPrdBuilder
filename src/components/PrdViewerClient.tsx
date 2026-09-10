@@ -1,13 +1,16 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
-import { DocumentPanel } from "@/components/DocumentPanel";
+import { PrdCommentLayer } from "@/components/PrdCommentLayer";
 import { ChatMessage as ChatMessageBubble } from "@/components/ChatMessage";
 import type { ConversationView } from "@/lib/conversations";
+import type { DocComment } from "@/lib/googleDocs";
 import { PHASE_LABELS } from "@/lib/types";
+import { costForBreakdown, formatCost, formatTokenCount } from "@/lib/pricing";
+import { classifyApiError, FriendlyError } from "@/lib/errors";
 
 type DiffPart = { added: boolean; removed: boolean; value: string };
 type ViewMode = "prd" | "transcript" | "diff" | "activity" | "notes";
@@ -44,8 +47,106 @@ export function PrdViewerClient({
   const [diffLoading, setDiffLoading] = useState(false);
   const [notes, setNotes] = useState(conversation.notes);
   const [notesSaved, setNotesSaved] = useState(true);
+  const [comments, setComments] = useState<DocComment[] | null>(null);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
+  const [submittingPrdFeedback, setSubmittingPrdFeedback] = useState(false);
+  // Lifted from PrdCommentLayer -- lets the top-bar "revise as new version"
+  // action (a totally different, skeleton-level redo) warn before discarding
+  // in-progress inline comments/additions the PM hasn't submitted yet.
+  const [hasPendingComments, setHasPendingComments] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
+  const [actionError, setActionError] = useState<FriendlyError | null>(null);
+  // A conversation isn't "finished" just because a draft file exists --
+  // see runChatTurn's auto-save (claude.ts), which now saves as soon as a
+  // complete draft is produced, well before the PM finalizes anything. Only
+  // status === "completed" means the PM actually finalized (create_google_doc
+  // + Output phase). While it's anything else, this page is the mid-review
+  // surface: judge findings anchored on a real, current, but not-yet-final
+  // draft.
+  const isDraft = conversation.status !== "completed";
+
+  // Revisions carry the full prior conversation forward (see createRevision/
+  // createPrdRevision), so summing this version's own messages already
+  // covers everything back to Phase 1 Objective, not just this version's own
+  // turns.
+  const conversationUsage = useMemo(() => {
+    const byModel = conversation.messages.flatMap((m) => m.usage?.byModel ?? []);
+    const totalTokens = byModel.reduce((sum, m) => sum + m.inputTokens + m.outputTokens, 0);
+    return { totalTokens, totalCost: costForBreakdown(byModel) };
+  }, [conversation.messages]);
+  const [feedbackPanelOpen, setFeedbackPanelOpen] = useState(false);
+  const [feedbackCount, setFeedbackCount] = useState(0);
+  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
+  const [exportingGoogleDoc, setExportingGoogleDoc] = useState(false);
+  const downloadMenuRef = useRef<HTMLDivElement>(null);
+  const [reviseMenuOpen, setReviseMenuOpen] = useState(false);
+  const reviseMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!reviseMenuOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (reviseMenuRef.current && !reviseMenuRef.current.contains(e.target as Node)) {
+        setReviseMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [reviseMenuOpen]);
+
+  useEffect(() => {
+    if (!downloadMenuOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (downloadMenuRef.current && !downloadMenuRef.current.contains(e.target as Node)) {
+        setDownloadMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [downloadMenuOpen]);
+
+  function openReviseWithComments() {
+    setMode("prd");
+    setFeedbackPanelOpen(true);
+  }
+
+  useEffect(() => {
+    if (!hasPendingComments) return;
+    function warnOnClose(e: BeforeUnloadEvent) {
+      e.preventDefault();
+    }
+    window.addEventListener("beforeunload", warnOnClose);
+    return () => window.removeEventListener("beforeunload", warnOnClose);
+  }, [hasPendingComments]);
+
+  async function loadComments() {
+    if (!conversation.googleDocUrl) return;
+    setCommentsError(null);
+    try {
+      const res = await fetch(`/api/conversations/${conversation.id}/doc-comments`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to load comments");
+      setComments(data.comments);
+    } catch (err) {
+      setCommentsError(err instanceof Error ? err.message : "Failed to load comments");
+    }
+  }
+
+  useEffect(() => {
+    loadComments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation.id, conversation.googleDocUrl]);
+
+  const openCommentCount = comments?.filter((c) => !c.resolved).length ?? null;
 
   async function revise() {
+    if (
+      hasPendingComments &&
+      !window.confirm(
+        "You have unsubmitted comments/additions on this PRD. \"Revise as new version\" starts a fresh skeleton-level redo and does NOT carry them forward -- they'll stay saved here if you cancel, but continuing means addressing them separately later. Continue anyway?"
+      )
+    ) {
+      return;
+    }
     setRevising(true);
     try {
       const res = await fetch(`/api/conversations/${conversation.id}/revise`, { method: "POST" });
@@ -53,6 +154,125 @@ export function PrdViewerClient({
       if (res.ok) router.push(`/chat/${data.conversation.id}`);
     } finally {
       setRevising(false);
+    }
+  }
+
+  async function submitPrdFeedback(message: string) {
+    setSubmittingPrdFeedback(true);
+    setActionError(null);
+    try {
+      if (isDraft) {
+        // Still under review, nothing finalized yet -- this is just the next
+        // turn in the SAME conversation (the model redrafts, and
+        // runChatTurn's auto-save/auto-verify pick the new draft up on their
+        // own), not a new version. Refresh re-reads the server component's
+        // props (fresh content + findings) once the turn lands.
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversationId: conversation.id, message }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Request failed");
+        router.refresh();
+        return;
+      }
+      // Already finalized -- this genuinely is a new version, same as
+      // before: fork via createPrdRevision and hand the compiled feedback to
+      // ChatClient's own pending-seed mechanism on the new conversation.
+      const res = await fetch(`/api/conversations/${conversation.id}/revise-prd`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Request failed");
+      sessionStorage.setItem(`prd-builder:pending-seed:${data.conversation.id}`, message);
+      router.push(`/chat/${data.conversation.id}`);
+    } catch (err) {
+      setActionError(classifyApiError(err instanceof Error ? err.message : "Request failed"));
+    } finally {
+      setSubmittingPrdFeedback(false);
+    }
+  }
+
+  async function handleResolveFinding(findingId: string) {
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/conversations/${conversation.id}/findings/${findingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "resolve" }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Request failed");
+      router.refresh();
+    } catch (err) {
+      setActionError(classifyApiError(err instanceof Error ? err.message : "Request failed"));
+    }
+  }
+
+  async function handleDismissFinding(findingId: string) {
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/conversations/${conversation.id}/findings/${findingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "dismiss" }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Request failed");
+      router.refresh();
+    } catch (err) {
+      setActionError(classifyApiError(err instanceof Error ? err.message : "Request failed"));
+    }
+  }
+
+  async function handleReopenFinding(findingId: string) {
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/conversations/${conversation.id}/findings/${findingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reopen" }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Request failed");
+      router.refresh();
+    } catch (err) {
+      setActionError(classifyApiError(err instanceof Error ? err.message : "Request failed"));
+    }
+  }
+
+  // Explicit finalize action -- the ONLY thing that advances the
+  // conversation to Output/completed now that a draft saves and gets
+  // verification comments well before this point. Sent to the SAME
+  // conversation via /api/chat, same approval wording Phase 8 already
+  // recognizes as "proceed to Output" (create_google_doc + phase advance);
+  // save_prd_markdown firing again here is harmless, just re-saving
+  // identical content.
+  async function handleFinalize() {
+    const openCount = conversation.verificationFindings.filter((f) => f.status === "open").length;
+    if (
+      openCount > 0 &&
+      !window.confirm(
+        `${openCount} verification finding${openCount === 1 ? "" : "s"} still open. Finalize anyway?`
+      )
+    ) {
+      return;
+    }
+    setFinalizing(true);
+    setActionError(null);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: conversation.id,
+          message: "I approve — please go ahead and write/revise the PRD now.",
+          skipVerify: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Request failed");
+      router.refresh();
+    } catch (err) {
+      setActionError(classifyApiError(err instanceof Error ? err.message : "Request failed"));
+    } finally {
+      setFinalizing(false);
     }
   }
 
@@ -94,6 +314,33 @@ export function PrdViewerClient({
     setTimeout(() => window.print(), 50);
   }
 
+  // Manual export/re-export -- independent of the drafting model's own
+  // Phase 9 create_google_doc call, so a PM whose export failed (expired
+  // Google token, most commonly) can retry it directly instead of having to
+  // re-trigger a full chat turn just to get the same tool call to run again.
+  async function handleExportGoogleDoc() {
+    setExportingGoogleDoc(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/conversations/${conversation.id}/export-google-doc`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Request failed");
+      router.refresh();
+      // The only other feedback here is a quiet link appearing in the
+      // header -- easy to miss entirely, especially since this action takes
+      // several seconds. Opening the finished Doc directly is the
+      // unambiguous "yes, it worked" signal, matching how Export PDF's
+      // print dialog appears immediately rather than silently.
+      window.open(data.url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setActionError(classifyApiError(err instanceof Error ? err.message : "Request failed"));
+    } finally {
+      setExportingGoogleDoc(false);
+    }
+  }
+
   const notesSaveTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   function handleNotesChange(value: string) {
     setNotes(value);
@@ -110,7 +357,7 @@ export function PrdViewerClient({
   }
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-screen flex-col prd-page-root">
       <div className="print:hidden">
         <AppHeader userName={userName} userEmail={userEmail} signOutAction={signOutAction} />
       </div>
@@ -128,16 +375,31 @@ export function PrdViewerClient({
                 archived
               </span>
             )}
+            {conversationUsage.totalTokens > 0 && (
+              <span
+                title="Total spend across this PRD's whole conversation, from Phase 1 Objective onward"
+                className="rounded-full border border-bb-border-subtle px-2 py-0.5 text-[10px] text-bb-text-tertiary"
+              >
+                {formatTokenCount(conversationUsage.totalTokens)} tokens · {formatCost(conversationUsage.totalCost)}
+              </span>
+            )}
           </div>
           {conversation.googleDocUrl && (
-            <a
-              href={conversation.googleDocUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-xs text-bb-red underline underline-offset-2"
-            >
-              Open Google Doc ↗
-            </a>
+            <div className="flex items-center gap-2">
+              <a
+                href={conversation.googleDocUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-bb-red underline underline-offset-2"
+              >
+                Open Google Doc ↗
+              </a>
+              {openCommentCount !== null && openCommentCount > 0 && (
+                <span className="rounded-full bg-bb-red-dim px-2 py-0.5 text-[10px] font-semibold text-bb-text">
+                  {openCommentCount} open comment{openCommentCount === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -147,31 +409,156 @@ export function PrdViewerClient({
           >
             ← Dashboard
           </Link>
+          <div className="relative" ref={downloadMenuRef}>
+            <button
+              onClick={() => setDownloadMenuOpen((v) => !v)}
+              title="Download"
+              aria-label="Download"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-bb-border text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            {downloadMenuOpen && (
+              <div className="absolute right-0 top-10 z-20 w-40 rounded-md border border-bb-border bg-bb-panel p-1 shadow-lg">
+                <button
+                  onClick={() => {
+                    downloadMarkdown();
+                    setDownloadMenuOpen(false);
+                  }}
+                  className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-bb-text hover:bg-bb-surface"
+                >
+                  Download .md
+                </button>
+                <button
+                  onClick={() => {
+                    exportPdf();
+                    setDownloadMenuOpen(false);
+                  }}
+                  className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-bb-text hover:bg-bb-surface"
+                >
+                  Export PDF
+                </button>
+                <button
+                  onClick={() => {
+                    // Don't close the menu immediately (unlike the other two
+                    // actions above) -- this one takes several real seconds
+                    // against the Google API, and the "Exporting…" label
+                    // below is the only in-progress feedback on the whole
+                    // page. Closing on click before it can render is what
+                    // made a successful export look like nothing happened.
+                    handleExportGoogleDoc().finally(() => setDownloadMenuOpen(false));
+                  }}
+                  disabled={exportingGoogleDoc || !conversation.prdMarkdownPath}
+                  title={
+                    !conversation.prdMarkdownPath
+                      ? "No saved PRD to export yet"
+                      : conversation.googleDocUrl
+                        ? "Re-export -- overwrites the existing Google Doc link with a fresh one"
+                        : "Create a Google Doc from the current PRD"
+                  }
+                  className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-bb-text hover:bg-bb-surface disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {exportingGoogleDoc
+                    ? "Exporting…"
+                    : conversation.googleDocUrl
+                      ? "Re-export to Google Doc"
+                      : "Export to Google Doc"}
+                </button>
+              </div>
+            )}
+          </div>
+          {isDraft ? (
+            // One dropdown, not two competing buttons -- "Redo PRD" (keep
+            // iterating, opens the comment panel) and "Finalize PRD" (the
+            // rare, deliberate, harder-to-undo one -- create_google_doc +
+            // mark complete, no more judge calls) both live under the same
+            // trigger so neither reads as more the "default" action than
+            // the other; the PM has to actually open the menu and pick.
+            <div className="relative" ref={reviseMenuRef}>
+              <button
+                onClick={() => setReviseMenuOpen((v) => !v)}
+                className="flex items-center gap-1 rounded-full bg-bb-red px-3 py-1.5 text-xs font-semibold text-white hover:bg-bb-red-hover"
+              >
+                Revise PRD
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                  <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              {reviseMenuOpen && (
+                <div className="absolute left-0 top-10 z-20 w-52 rounded-md border border-bb-border bg-bb-panel p-1 shadow-lg">
+                  <button
+                    onClick={() => {
+                      openReviseWithComments();
+                      setReviseMenuOpen(false);
+                    }}
+                    title="Point-fix specific parts of this draft via inline comments, or address open verification findings"
+                    className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-bb-text hover:bg-bb-surface"
+                  >
+                    Redo PRD
+                  </button>
+                  <button
+                    onClick={() => {
+                      setReviseMenuOpen(false);
+                      handleFinalize();
+                    }}
+                    disabled={finalizing}
+                    title="Create the Google Doc and mark this PRD complete, with no further judge checks -- this is the final step, not a way to keep iterating."
+                    className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-bb-text hover:bg-bb-surface disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {finalizing ? "Finalizing…" : "✅ Finalize PRD"}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={openReviseWithComments}
+              title="Point-fix specific parts of this PRD via inline comments -- keeps the current structure, revises only what you flag."
+              className="rounded-full bg-bb-red px-3 py-1.5 text-xs font-semibold text-white hover:bg-bb-red-hover"
+            >
+              Revise PRD
+            </button>
+          )}
           <button
-            onClick={downloadMarkdown}
-            className="rounded-full border border-bb-border px-3 py-1.5 text-xs font-semibold text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
+            data-feedback-toggle
+            onClick={() => setFeedbackPanelOpen((v) => !v)}
+            title="Comments and verification findings on this PRD"
+            className="rounded-full border border-bb-border px-3 py-1.5 text-xs font-semibold text-bb-text-secondary hover:border-bb-amber hover:text-bb-text"
           >
-            Download .md
-          </button>
-          <button
-            onClick={exportPdf}
-            className="rounded-full border border-bb-border px-3 py-1.5 text-xs font-semibold text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
-          >
-            Export PDF
+            💬 Feedback{feedbackCount > 0 ? ` (${feedbackCount})` : ""}
           </button>
           <button
             onClick={revise}
             disabled={revising}
-            className="rounded-full bg-bb-red px-3 py-1.5 text-xs font-semibold text-white hover:bg-bb-red-hover disabled:opacity-50"
+            title="Starts over from the skeleton -- does not carry forward inline comments below. For point-fixes, use 'Revise PRD' instead."
+            className="rounded-full border border-bb-border px-3 py-1.5 text-xs font-semibold text-bb-text-secondary hover:border-bb-red hover:text-bb-text disabled:opacity-50"
           >
-            {revising ? "Starting revision…" : "Revise as new version"}
+            {revising ? "Starting redo…" : "Redo Skeleton"}
           </button>
           {conversation.status !== "archived" && (
             <button
               onClick={archive}
-              className="rounded-full border border-bb-border px-3 py-1.5 text-xs font-semibold text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
+              title="Archive"
+              aria-label="Archive"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-bb-border text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
             >
-              Archive
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5C21.75 4.254 21.246 3.75 20.625 3.75H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125ZM10 11.25h4M20.25 7.5l-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </button>
           )}
         </div>
@@ -220,11 +607,36 @@ export function PrdViewerClient({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      {actionError && (
+        <div className="border-b border-bb-red bg-bb-red-dim px-8 py-2 text-sm text-bb-text print:hidden">
+          <span className="font-semibold">{actionError.title}: </span>
+          <span className="text-bb-text-secondary">{actionError.detail}</span>
+          <button
+            onClick={() => setActionError(null)}
+            className="ml-3 text-bb-text-tertiary hover:text-bb-text"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto prd-scroll-area">
         {mode === "prd" && (
-          <div className="prd-print-area">
-            <DocumentPanel content={content} />
-          </div>
+          <PrdCommentLayer
+            conversationId={conversation.id}
+            content={content}
+            onSubmit={submitPrdFeedback}
+            submitting={submittingPrdFeedback}
+            onPendingChange={setHasPendingComments}
+            onFeedbackCountChange={setFeedbackCount}
+            panelOpen={feedbackPanelOpen}
+            onPanelOpenChange={setFeedbackPanelOpen}
+            judgeFindings={conversation.verificationFindings}
+            onResolveFinding={handleResolveFinding}
+            onDismissFinding={handleDismissFinding}
+            onReopenFinding={handleReopenFinding}
+          />
         )}
 
         {mode === "transcript" && (
@@ -254,6 +666,50 @@ export function PrdViewerClient({
               Created {formatTimestamp(conversation.createdAt)}
               {conversation.completedAt && ` · Completed ${formatTimestamp(conversation.completedAt)}`}
             </div>
+
+            {conversation.googleDocUrl && (
+              <div className="mt-8">
+                <div className="mb-2 flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-bb-text">Google Doc comments</h2>
+                  <button
+                    onClick={loadComments}
+                    className="text-xs text-bb-text-tertiary underline decoration-dotted hover:text-bb-text-secondary"
+                  >
+                    refresh
+                  </button>
+                </div>
+                <p className="mb-3 text-xs text-bb-text-tertiary">
+                  Reviewers comment directly in the Doc -- this is a read-only view so you don&apos;t have to
+                  tab over just to check.
+                </p>
+                {commentsError && <p className="text-xs text-bb-red">{commentsError}</p>}
+                {!commentsError && comments && comments.length === 0 && (
+                  <p className="text-sm text-bb-text-tertiary">No comments yet.</p>
+                )}
+                {!commentsError && comments && comments.length > 0 && (
+                  <ul className="space-y-2">
+                    {comments.map((c) => (
+                      <li
+                        key={c.id}
+                        className={`rounded-md border px-3 py-2 text-sm ${
+                          c.resolved
+                            ? "border-bb-border-subtle text-bb-text-tertiary"
+                            : "border-bb-red-dim bg-bb-red-dim/20 text-bb-text"
+                        }`}
+                      >
+                        <div className="mb-1 flex items-center justify-between text-xs text-bb-text-tertiary">
+                          <span>{c.author}</span>
+                          <span>
+                            {formatTimestamp(c.createdTime)} {c.resolved && "· resolved"}
+                          </span>
+                        </div>
+                        {c.content}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         )}
 

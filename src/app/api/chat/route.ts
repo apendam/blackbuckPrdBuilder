@@ -31,32 +31,48 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
   }
 
+  const userAt = body.at ?? new Date().toISOString();
   const nextMessages: ChatMessage[] = [
     ...conversation.messages,
-    { role: "user", content: body.message, attachments: body.attachments },
+    { role: "user", content: body.message, attachments: body.attachments, at: userAt },
   ];
 
   try {
     const modelSettings = await getUserModelSettings(userId);
+    // A conversation forked from a parent (createRevision/createPrdRevision)
+    // carries the parent's full message history forward, which can already
+    // describe an older version's PRD as saved/complete -- until THIS
+    // conversation has saved its own PRD, that history is ambiguous enough
+    // that the model needs an explicit note it's looking at an older
+    // version's finished state, not this one's.
+    const isFreshRevision = Boolean(conversation.parentId) && !conversation.prdMarkdownPath;
     const result = await runChatTurn(
       nextMessages,
       { current: conversation.currentPhase, completed: conversation.completedPhases },
       modelSettings,
       userId,
-      conversation.id
+      conversation.id,
+      conversation.skeletonSections,
+      conversation.skeletonHistory,
+      isFreshRevision,
+      conversation.verificationFindings,
+      body.skipVerify
     );
 
+    const assistantAt = new Date().toISOString();
     const finalMessages: ChatMessage[] = [
       ...nextMessages,
-      { role: "assistant", content: result.reply },
+      { role: "assistant", content: result.reply, at: assistantAt, usage: result.usage },
     ];
 
     await saveConversationTurn(userId, conversation.id, finalMessages, result.phaseState, {
       title: result.title,
       verticals: result.verticals,
       skeletonSections: result.skeletonSections,
+      skeletonHistory: result.skeletonHistory,
       savedPrd: result.savedPrd,
       googleDocUrl: result.googleDocUrl,
+      verificationFindings: result.verificationFindings,
     });
 
     const responseBody: ChatTurnResponse = {
@@ -64,11 +80,17 @@ export async function POST(req: NextRequest) {
       phaseState: result.phaseState,
       title: result.title,
       skeletonSections: result.skeletonSections,
+      skeletonHistory: result.skeletonHistory,
       savedPrd: result.savedPrd,
       googleDocUrl: result.googleDocUrl,
+      verificationFindings: result.verificationFindings,
+      userAt,
+      assistantAt,
+      usage: result.usage,
     };
     return NextResponse.json(responseBody);
   } catch (err) {
+    console.error("POST /api/chat failed:", err);
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
   }

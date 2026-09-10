@@ -14,6 +14,7 @@ export const KNOWN_REPOS = [
   "blackbuck-pro-app",
   "fms-inbound-payment",
   "fms-outbound-payment-service",
+  "fms_rmm",
 ] as const;
 
 export type RepoName = (typeof KNOWN_REPOS)[number];

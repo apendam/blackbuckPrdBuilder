@@ -1,10 +1,14 @@
 "use client";
 
-import { useRef, useState, KeyboardEvent, ChangeEvent } from "react";
+import { useEffect, useRef, useState, KeyboardEvent, ChangeEvent } from "react";
 import { Attachment } from "@/lib/types";
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 const ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.md,.json,.csv";
+const MIN_TEXTAREA_HEIGHT = 40;
+const MAX_TEXTAREA_HEIGHT = 160;
+const BULLET_LINE = /^(\s*)([-*•])(\s+)/;
+const NUMBERED_LINE = /^(\s*)(\d+)([.)])(\s+)/;
 
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -24,28 +28,91 @@ export function ChatInput({
   onSend,
   disabled,
 }: {
-  onSend: (text: string, attachments: Attachment[]) => void;
+  onSend: (text: string, attachments: Attachment[]) => Promise<boolean>;
   disabled?: boolean;
 }) {
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attaching, setAttaching] = useState(false);
+  const [sending, setSending] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  function submit() {
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const next = Math.min(Math.max(el.scrollHeight, MIN_TEXTAREA_HEIGHT), MAX_TEXTAREA_HEIGHT);
+    el.style.height = `${next}px`;
+  }, [value]);
+
+  async function submit() {
     const trimmed = value.trim();
-    if ((!trimmed && attachments.length === 0) || disabled) return;
-    onSend(trimmed, attachments);
-    setValue("");
-    setAttachments([]);
+    if ((!trimmed && attachments.length === 0) || disabled || sending) return;
+    setSending(true);
+    try {
+      // Only clear the box once the send actually succeeds -- clearing
+      // unconditionally meant a failed request (network error, API outage,
+      // out-of-credits) silently threw away whatever the PM had just typed.
+      const succeeded = await onSend(trimmed, attachments);
+      if (succeeded) {
+        setValue("");
+        setAttachments([]);
+      }
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function insertNewlineAtCursor(el: HTMLTextAreaElement) {
+    const start = el.selectionStart ?? value.length;
+    const end = el.selectionEnd ?? value.length;
+    const before = value.slice(0, start);
+    const after = value.slice(end);
+    const lineStart = before.lastIndexOf("\n") + 1;
+    const currentLine = before.slice(lineStart);
+
+    const bulletMatch = currentLine.match(BULLET_LINE);
+    const numberedMatch = currentLine.match(NUMBERED_LINE);
+    const match = bulletMatch ?? numberedMatch;
+
+    if (match && currentLine.slice(match[0].length).trim() === "") {
+      // Enter on an empty list item -- drop the marker and exit the list.
+      const next = before.slice(0, lineStart) + after;
+      setValue(next);
+      requestAnimationFrame(() => {
+        el.selectionStart = el.selectionEnd = lineStart;
+      });
+      return;
+    }
+
+    let insertion = "\n";
+    if (bulletMatch) {
+      const [, indent, marker] = bulletMatch;
+      insertion = `\n${indent}${marker} `;
+    } else if (numberedMatch) {
+      const [, indent, num, sep] = numberedMatch;
+      insertion = `\n${indent}${Number(num) + 1}${sep} `;
+    }
+
+    const next = before + insertion + after;
+    setValue(next);
+    const newCursor = start + insertion.length;
+    requestAnimationFrame(() => {
+      el.selectionStart = el.selectionEnd = newCursor;
+    });
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key !== "Enter") return;
+    if (e.shiftKey || e.altKey) {
       e.preventDefault();
-      submit();
+      insertNewlineAtCursor(e.currentTarget);
+      return;
     }
+    e.preventDefault();
+    submit();
   }
 
   async function handleFiles(e: ChangeEvent<HTMLInputElement>) {
@@ -131,13 +198,15 @@ export function ChatInput({
           </svg>
         </button>
         <textarea
+          ref={textareaRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={disabled}
           rows={1}
           placeholder="Type your answer..."
-          className="max-h-32 flex-1 resize-none bg-transparent py-1.5 text-sm text-bb-text placeholder:text-bb-text-tertiary focus:outline-none disabled:opacity-50"
+          style={{ height: MIN_TEXTAREA_HEIGHT, maxHeight: MAX_TEXTAREA_HEIGHT }}
+          className="flex-1 resize-none overflow-y-auto bg-transparent py-1.5 text-sm text-bb-text placeholder:text-bb-text-tertiary focus:outline-none disabled:opacity-50"
         />
         <button
           type="button"

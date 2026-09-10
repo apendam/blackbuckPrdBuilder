@@ -13,6 +13,11 @@
   --bb-red-hover: #c9202f;
   --bb-red-dim: #4a1a20;
   --bb-green: #3fb950;
+  /* Judge (verification) marks/badges use amber instead of the PM comment
+     red, so the two are visually distinguishable at a glance in a PRD that
+     has both -- "who said this" should be legible without opening anything. */
+  --bb-amber: #d29922;
+  --bb-amber-dim: #3d2e0c;
 }
 
 @theme inline {
@@ -28,12 +33,100 @@
   --color-bb-red-hover: var(--bb-red-hover);
   --color-bb-red-dim: var(--bb-red-dim);
   --color-bb-green: var(--bb-green);
+  --color-bb-amber: var(--bb-amber);
+  --color-bb-amber-dim: var(--bb-amber-dim);
 }
 
 body {
   background: var(--bb-bg);
   color: var(--bb-text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+.typing-dot {
+  animation: typing-bounce 1.2s infinite ease-in-out;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* The PRD comment flow (PrdCommentLayer) relies on the PM seeing exactly
+   what they selected while the comment popup is open -- the browser's
+   default selection color can render nearly invisible against this dark
+   theme (a faint grey in some browsers), which reads as "the selection
+   disappeared" even though it's still there. Force a clearly visible,
+   on-brand highlight instead of trusting the default. */
+.prd-print-area ::selection,
+.prd-print-area code::selection {
+  background-color: var(--bb-red);
+  color: #ffffff;
+}
+
+/* Persistent marker for text that has a comment attached (PrdCommentLayer's
+   imperative highlight pass) -- distinct from the ::selection color above,
+   which is only ever active during a live drag. This has to stay visible
+   indefinitely, so it's a lot more subtle: a tinted underline rather than a
+   solid block, so a heavily-commented PRD doesn't turn into a wall of red. */
+.prd-comment-mark {
+  background-color: rgba(224, 41, 62, 0.16);
+  border-bottom: 1px solid var(--bb-red);
+  color: #ffffff;
+  cursor: default;
+}
+.prd-comment-icon {
+  display: inline-flex;
+  cursor: pointer;
+  color: var(--bb-red);
+  font-size: 0.75em;
+  margin-left: 1px;
+  vertical-align: super;
+  line-height: 0;
+}
+
+/* Same mechanism as .prd-comment-mark/.prd-comment-icon above, amber instead
+   of red -- a judge (verification) finding and a PM's own comment can both
+   land in the same document, and "who said this" needs to be legible at a
+   glance without opening anything. */
+.prd-judge-mark {
+  background-color: rgba(210, 153, 34, 0.18);
+  border-bottom: 1px solid var(--bb-amber);
+  color: #ffffff;
+  cursor: default;
+}
+.prd-judge-icon {
+  display: inline-flex;
+  cursor: pointer;
+  color: var(--bb-amber);
+  font-size: 0.75em;
+  margin-left: 1px;
+  vertical-align: super;
+  line-height: 0;
+}
+
+/* A question just sent to the judge, before its real answer comes back --
+   dashed instead of solid so it reads as "not settled yet" at a glance,
+   distinct from an actual (already-answered) judge finding. */
+.prd-judge-mark-pending {
+  border-bottom-style: dashed;
+  opacity: 0.85;
 }
 
 /* PDF export: DocumentPanel prints, everything else (header, tabs, sidebar
@@ -60,8 +153,20 @@ body {
   .prd-print-area * {
     visibility: visible;
   }
+  /* The on-screen layout is a fixed-height (h-screen) flex column around a
+     flex-1 overflow-y-auto scroll region -- that's how the PRD scrolls inside
+     its own pane on screen instead of the whole window. Left as-is for print,
+     that fixed height + overflow clips the print area to a single page's
+     worth of content, since position:absolute below sizes .prd-print-area to
+     that same clipped box rather than to the document's actual content
+     height. Releasing both ancestors to their natural (auto) height lets the
+     browser's print pagination see the PRD's true, unclipped length. */
+  .prd-page-root,
+  .prd-scroll-area {
+    height: auto !important;
+    overflow: visible !important;
+  }
   .prd-print-area {
-    position: absolute;
-    inset: 0;
+    position: static;
   }
 }

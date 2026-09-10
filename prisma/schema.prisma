@@ -60,11 +60,12 @@ model VerificationToken {
 // for that phase of the PRD-writing conversation. See src/lib/modelSettings.ts
 // for the phase list, allowed models, and defaults.
 model ModelSetting {
-  id     String  @id @default(cuid())
-  userId String
-  phase  String
-  model  String
-  effort String?
+  id       String  @id @default(cuid())
+  userId   String
+  phase    String
+  provider String  @default("anthropic")
+  model    String
+  effort   String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -75,24 +76,26 @@ model ModelSetting {
 // completed PRD creates a NEW row with parentId pointing at this one and
 // version incremented -- never edits the original in place.
 model Conversation {
-  id              String    @id @default(cuid())
-  userId          String
-  title           String?
-  status          String    @default("draft") // "draft" | "completed" | "archived"
-  currentPhase    String    @default("objective")
-  completedPhases String    @default("[]") // JSON-encoded Phase[]
-  messages        String    @default("[]") // JSON-encoded ChatMessage[]
-  verticals       String    @default("[]") // JSON-encoded string[], set via set_verticals at phase 4
-  phaseLog        String    @default("[]") // JSON-encoded {phase, at}[], one entry per phase transition
-  skeletonSections String   @default("[]") // JSON-encoded SkeletonSection[], set via save_skeleton at phase 6/7
-  notes           String    @default("") // PM's own scratch notes, never sent to the model
-  prdMarkdownPath String?
-  googleDocUrl    String?
-  version         Int       @default(1)
-  parentId        String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  completedAt     DateTime?
+  id                   String    @id @default(cuid())
+  userId               String
+  title                String?
+  status               String    @default("draft") // "draft" | "completed" | "archived"
+  currentPhase         String    @default("objective")
+  completedPhases      String    @default("[]") // JSON-encoded Phase[]
+  messages             String    @default("[]") // JSON-encoded ChatMessage[]
+  verticals            String    @default("[]") // JSON-encoded string[], set via set_verticals at phase 4
+  phaseLog             String    @default("[]") // JSON-encoded {phase, at}[], one entry per phase transition
+  skeletonSections     String    @default("[]") // JSON-encoded SkeletonSection[], set via save_skeleton at phase 6/7
+  skeletonHistory      String    @default("[]") // JSON-encoded SkeletonHistoryEntry[], one per revision round
+  verificationFindings String    @default("[]") // JSON-encoded VerificationFinding[], set by the full_prd_verify pass -- never carried forward into a revision (see createRevision/createPrdRevision), since a fresh version needs its own fresh check
+  notes                String    @default("") // PM's own scratch notes, never sent to the model
+  prdMarkdownPath      String?
+  googleDocUrl         String?
+  version              Int       @default(1)
+  parentId             String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  completedAt          DateTime?
 
   user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   parent    Conversation?  @relation("Revisions", fields: [parentId], references: [id])
