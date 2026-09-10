@@ -13,6 +13,109 @@ import { costForBreakdown, formatCost, formatTokenCount } from "@/lib/pricing";
 import { classifyApiError, FriendlyError } from "@/lib/errors";
 
 type DiffPart = { added: boolean; removed: boolean; value: string };
+
+interface RenderedMermaidImage {
+  url: string;
+  width: number;
+  height: number;
+}
+
+// Every Mermaid fence in document order, WITHOUT deduping identical sources
+// -- unlike DocumentPanel's own extraction (which dedupes by source text for
+// its render cache), this one has to align 1:1, by occurrence index, with
+// the server's markdownToDocsRequests, which counts every code fence as it
+// walks the document regardless of whether an earlier one had the same text.
+const MERMAID_FENCE_ORDERED = /```mermaid\n([\s\S]*?)```/g;
+function extractMermaidSourcesInOrder(content: string): string[] {
+  return Array.from(content.matchAll(MERMAID_FENCE_ORDERED), (m) => m[1].replace(/\n$/, ""));
+}
+
+// Renders every Mermaid diagram in the PRD to a PNG data URL, for embedding
+// as a real image in the exported Google Doc -- Docs can't render Mermaid
+// source itself, and rendering requires a real browser (mermaid.js needs DOM
+// APIs for text measurement), so this only runs from the manual export
+// button here, never from the server. A diagram that fails to render (or
+// whose rendered SVG can't be rasterized to PNG, which can happen for
+// SVGs containing foreignObject content) becomes `null` in the result --
+// the server falls back to raw-source text for that one specific diagram
+// rather than failing the whole export.
+async function renderMermaidDiagramsForExport(content: string): Promise<(RenderedMermaidImage | null)[]> {
+  const sources = extractMermaidSourcesInOrder(content);
+  if (sources.length === 0) return [];
+
+  const { default: mermaid } = await import("mermaid");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "dark",
+    themeVariables: {
+      primaryColor: "#2a1414",
+      primaryBorderColor: "#e5484d",
+      primaryTextColor: "#f2f2f2",
+      lineColor: "#8a8a8a",
+      secondaryColor: "#1a1a1a",
+      tertiaryColor: "#1a1a1a",
+      fontSize: "14px",
+    },
+    flowchart: { curve: "basis" },
+    securityLevel: "strict",
+  });
+
+  return Promise.all(
+    sources.map(async (source, i): Promise<RenderedMermaidImage | null> => {
+      try {
+        const { svg } = await mermaid.render(`mmd-export-${i}-${Date.now()}`, source);
+        return await svgStringToPngDataUrl(svg);
+      } catch {
+        return null;
+      }
+    })
+  );
+}
+
+// Draws a rendered Mermaid SVG onto an offscreen canvas at 2x scale (for
+// reasonable sharpness in the Doc) and reads it back out as a PNG data URL
+// -- Google Docs' image-insertion API doesn't accept SVG directly, only
+// raster formats.
+function svgStringToPngDataUrl(svgString: string, scale = 2): Promise<RenderedMermaidImage> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+    const objectUrl = URL.createObjectURL(svgBlob);
+    img.onload = () => {
+      const width = img.naturalWidth || img.width || 800;
+      const height = img.naturalHeight || img.height || 600;
+      const canvas = document.createElement("canvas");
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("Canvas context unavailable"));
+        return;
+      }
+      // The diagram's own dark theme has a dark canvas background -- fill it
+      // explicitly so any transparent SVG region doesn't come out as
+      // whatever default the PNG format falls back to.
+      ctx.fillStyle = "#1a1a1a";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(objectUrl);
+      try {
+        resolve({ url: canvas.toDataURL("image/png"), width, height });
+      } catch (err) {
+        // toDataURL throws if the canvas got tainted (e.g. a <foreignObject>
+        // in the SVG treated as cross-origin content by some browsers) --
+        // this diagram just falls back to raw text server-side.
+        reject(err instanceof Error ? err : new Error("Canvas export failed"));
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Failed to load rendered SVG as an image"));
+    };
+    img.src = objectUrl;
+  });
+}
 type ViewMode = "prd" | "transcript" | "diff" | "activity" | "notes";
 
 function formatTimestamp(iso: string): string {
@@ -322,8 +425,15 @@ export function PrdViewerClient({
     setExportingGoogleDoc(true);
     setActionError(null);
     try {
+      // Render every diagram to a real PNG in the browser first -- this is
+      // the one piece the server genuinely cannot do itself (no DOM to
+      // measure text with), so it has to happen here, before the export
+      // call, not as a fallback inside it.
+      const images = await renderMermaidDiagramsForExport(content);
       const res = await fetch(`/api/conversations/${conversation.id}/export-google-doc`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ images }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Request failed");
@@ -475,6 +585,13 @@ export function PrdViewerClient({
               </div>
             )}
           </div>
+          <Link
+            href={`/chat/${conversation.id}`}
+            title="Open the full chat for this PRD -- free-form messages and file attachments included -- to keep talking with the agent. Changes made here land on THIS same version, not a new one; use 'Revise PRD' instead if you want to branch off a new version."
+            className="rounded-full border border-bb-border px-3 py-1.5 text-xs font-semibold text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
+          >
+            🛠️ Modify PRD
+          </Link>
           {isDraft ? (
             // One dropdown, not two competing buttons -- "Redo PRD" (keep
             // iterating, opens the comment panel) and "Finalize PRD" (the

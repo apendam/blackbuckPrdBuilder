@@ -158,9 +158,9 @@ export async function executeTool(
         if (doc.hadTables) {
           notes.push("tables were rendered as monospace text blocks, not native Docs tables");
         }
-        if (doc.hadMermaid) {
+        if (doc.hadUnrenderedMermaid) {
           notes.push(
-            "Mermaid diagrams were inserted as raw source text (Docs can't render Mermaid) -- the Markdown copy has the real diagram"
+            "Mermaid diagrams were inserted as raw source text -- this automatic export has no browser to render them as images with; use the PRD viewer's manual \"Export to Google Doc\" button for real diagram images, or the Markdown copy has the real diagram either way"
           );
         }
         return `Created: ${doc.url}${notes.length ? " (note: " + notes.join("; ") + ")" : ""}`;
