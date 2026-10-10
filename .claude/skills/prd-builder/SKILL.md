@@ -11,12 +11,14 @@ You are helping a Blackbuck Product Manager write a PRD. This skill encodes thei
 
 Blackbuck PRDs get read and executed by engineers across many independent verticals (Sales, Toll, Fuel, TZF, Payments, GPS, Supply, Load Board, Finserve, Frontend, Android, BB Pro). A PRD that jumps straight to a full draft tends to bake in the PM's unstated assumptions before anyone's checked them, and it tends to quietly change flows in verticals the PM doesn't have full visibility into. The phase gates exist to catch both problems early, while they're still cheap to fix — not as process for its own sake. If you find yourself wanting to skip ahead because you think you already know what the PM wants, that instinct is exactly what this process exists to override.
 
-## The two rules that override everything else
+## The three rules that override everything else
 
 1. **Never assume — ask.** If a fact you need (which team owns a flow, whether a change is additive or breaking, what "success" means numerically, what happens on a specific error code) isn't stated, ask a specific clarifying question. A vague or generically-hedged PRD section is worse than a section that plainly says "TBD — need confirmation from the PM on X."
 2. **Flag drastic changes to existing flow.** If what the PM is describing would change how an existing, already-shipped flow behaves — not just add something new alongside it — say so explicitly and ask whether that's intended before writing it into the PRD as if it were already settled.
 
-Apply both rules throughout every phase below, not just once at the start.
+3. **Flag contradictions with a source spec.** If the design you're writing contradicts a source spec the PM gave you (for example a sibling vendor's PRD, an earlier version, or a parity target), say so, ask which one governs, and write that decision into the PRD's Open Questions or a decision log. A deliberate divergence with no recorded decision looks identical to an omission.
+
+Apply these rules throughout every phase below, not just once at the start.
 
 ## The phases
 
@@ -43,9 +45,10 @@ Work through this in order:
 4. **Surface scope gaps immediately**, before proceeding — e.g. "The flow you're touching also involves Android and TZF per the system map — should those be added to scope, or is this intentionally Toll-only?" This is the concrete mechanism for catching verticals nobody scoped in.
 5. **Check staleness before treating anything as current**: a flow file with a `last_verified` date older than 90 days should be flagged to the PM as "likely stale, worth re-verifying" rather than cited as settled fact. The same goes for any vertical file that's still a placeholder — say so plainly and ask the PM to walk you through that vertical's relevant flows, owning repos, and jargon conversationally instead of proceeding on guesswork. Don't silently fabricate vertical or cross-repo context to fill a gap.
 
-Then ask the PM for two more things before moving on:
+Then ask the PM for three more things before moving on:
 - Any API documentation relevant to this specific PRD (pasted text, a file, or a link).
 - A high-level description of the product flow to be built — PDF, image, text file, or pasted text all work.
+- **Any existing spec for the same capability** — another vendor's or product's version, an earlier version, or a parity target. Load each one as a **source spec**. Code and repos show what is built today; only a source spec shows rules that were specified but never built or built differently, and a PRD written from code alone silently drops those.
 
 Don't move to phase 6 until you have a working understanding of both, or the PM has explicitly told you to proceed without one of them.
 
@@ -56,6 +59,8 @@ Don't move to phase 6 until you have a working understanding of both, or the PM 
 - **Thorough** — the same skeleton, but before it's presented, run one internal self-critique pass that hunts specifically for missed branches, missed API touchpoints, and missed edge cases. Ground this pass **only** in material you've already loaded — the vertical files, the system-map flow files, and the API docs/flow description gathered in phase 5. Never surface a "finding" that's just a plausible-sounding invented scenario with nothing backing it; an ungrounded edge case is worse than no edge case, because it looks like diligence while actually being a guess. Fold real findings into the skeleton as structural markers (an added sub-heading, an inline `[EDGE CASE: ...]` flag, an extra `[API: ...]` marker) — not as resolved prose explaining the edge case in full. The skeleton must stay a skeleton regardless of which depth you picked; "Thorough" makes it a more complete skeleton, not a partial draft.
 
 If the PM picks Quick but what you loaded in phases 4-5 clearly involves multiple verticals or a cross-repo touchpoint from the system map, say so once and ask if they still want Quick — don't silently override their choice, and don't silently ignore an obvious mismatch either.
+
+**Before drafting, build a use-case inventory (both depths) if the PM gave you any source spec.** List every distinct use case, rule and decision table in each source spec. Map each one to a skeleton section, to an Open Question, or to an explicit entry in the "Considered and excluded" section with a one-line reason. An unmapped item blocks the skeleton: resolve it or ask the PM. Decision matrices and tables in a source spec go into the skeleton as table requirements, not as prose summaries, because a table flattened into a sentence loses the rows nobody reads closely. Keep the inventory itself out of the PRD body unless the PM asks for it; the mapping shows up through the sections, the Open Questions and the exclusions.
 
 **Then draft the skeleton.** Using `references/style/prd-skeleton.md` as the section template, produce **a skeleton only**: section headings, sub-headings, and a minimal (1-3 sentence) explanation of what will go in each section — not the full prose. Note in-line where a flowchart will be needed and where an API touchpoint will need the Success/Failure/Timeout treatment, but don't write either one out yet — that's phase 8's job.
 
@@ -69,7 +74,9 @@ Expand the confirmed skeleton section by section into the full PRD:
 - Add flowcharts as Mermaid diagrams wherever a flow branches or would be hard to follow in prose alone. See `references/style/tone-and-conventions.md` for how much stays in prose versus the diagram.
 - For every API or system integration touchpoint, use `references/style/api-contract-block.md` as the template and cover **all three** of Success, Failure, and Timeout. This is non-negotiable — an API section missing one of the three is incomplete, not "good enough for now."
 - Match the tone, table conventions, and jargon guidance in `references/style/tone-and-conventions.md`.
+- **Mark where each requirement came from**: code-derived (read from a repo) or spec-derived (from a source spec or the PM). A code-derived requirement that touches a business rule needs a check against the source specs before it's written as settled, since code shows current behaviour, not intent.
 
+**Coverage check before output.** After the full draft, extract the use cases from each source spec and from the draft, then match them: covered, partial (say what is missing or different), or missing. Re-check every partial and missing result with a second pass that tries to find coverage the first missed. Report the counts and the gaps to the PM, and resolve each gap by adding it, recording it under "Considered and excluded", or logging a decision. Skip this only when the PM gave no source spec.
 ### 9. Output
 Write the final PRD to a Google Doc via the Google Drive connector available in this session, matching the format and style of the PM's own reference PRDs (build it as a native Google Doc with real headings/tables, not pasted raw Markdown syntax). Also save a Markdown copy in-repo under `docs/prds/<kebab-case-title>.md` so there's a version-controlled source of truth. Tell the PM where both live.
 

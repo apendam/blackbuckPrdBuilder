@@ -27,6 +27,7 @@ Why this is worth solving now — the numbers (volume, cost, frequency, users/tr
 - **Goals** — what this PRD covers.
 - **Non-Goals / Out of Scope** — what it explicitly does not cover, and why (a two-column Out of Scope / Rationale table works well here).
 - **Teams & repos involved** — the verticals selected in phase 4, and which repos within each are touched.
+- **Considered and excluded** — a table (Item | Source | Reason) for every use case or rule in a source spec that this PRD deliberately does not carry over, including deliberate design differences from the source. Without it, a reader cannot tell an omission from a decision. If there is no source spec, write "No source spec provided" instead of dropping the entry.
 
 ### 6. Users and Use Cases
 Who this is for, as personas, plus concrete use cases in "As a `<persona>`, I want `<capability>`, so that `<outcome>`" form. Keep this to the use cases that actually drive a requirement below — not a generic list of everyone who might ever touch the feature.
