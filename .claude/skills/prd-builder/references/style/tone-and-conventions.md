@@ -2,6 +2,25 @@
 
 These conventions come from the PM's own reference PRDs and describe how Blackbuck PRDs are actually written day-to-day. Follow them so a generated PRD reads like this PM's work, not like a generic AI-generated document.
 
+## Length budget and exclusions (business logic only)
+
+**Budget.** Aim for a PRD a PM can read in one sitting: roughly 3,000-5,000 words for a typical multi-flow feature, less for a single-flow one. Per sub-flow in section 7: a 2-4 sentence intent, the nested-bullet logic, and at most one table or diagram. If a draft runs past the budget, cut before presenting and offer the PM a link to what was cut instead of keeping it in.
+
+**Cut rules.**
+- One idea per bullet; no bullet restates another section.
+- State a rule once, in the section that owns it, and refer to it by section number elsewhere.
+- Give the decision and a one-clause reason. Skip history ("an earlier draft said...") unless it changes what the reader must do, and skip process narration ("verified", "searched and found none").
+- Open questions: one line each, with owner and blocking flag.
+- Instrumentation, dashboards and marketing: short bullets tied to a success metric, not exhaustive lists.
+
+**Never in a PRD (keep in the knowledge base or code, not the document):**
+- Endpoints, HTTP methods, request/response fields, JSON samples, status codes.
+- Class, method, function, table, topic, queue, cron or config-key names; file paths and line numbers; repo names inside rules.
+- Retry counts, backoff and timeouts copied from code. Where a number is a business decision, state it; where it is still undecided, use `X`/`Y`.
+- Descriptions of how the code works today. State only the current business behaviour that the change depends on, in plain language.
+
+If an engineer needs a technical pointer, the PM can ask for a separate engineering-notes appendix; do not add one unprompted.
+
 ## Voice
 
 Write for engineers who need to implement this, not for an executive audience. First-person-plural ("we need to," "we will") is the house voice. Prefer direct, specific statements over hedged or padded ones — "we will retry 3 times" beats "the system may attempt to retry the request." Fragments and terse phrasing are fine in flow-narration bullets; save full sentences for sections that need to stand alone (Objective, Problem Statement, Sizing).
@@ -24,7 +43,7 @@ Use this pattern for any flow with more than one branch. Reserve Mermaid flowcha
 
 Use tables for:
 - **Status-mapping matrices** — frontend status ↔ backend status ↔ description ↔ resulting CTA. This is effectively how this PM documents a state machine.
-- **API-response-to-status pivot tables** — one row per (API, response type) pair, showing the resulting state transition.
+- **Outcome-to-status pivot tables** — one row per (dependency, outcome) pair, showing the resulting state transition, in business terms.
 - **Eligibility/comparison matrices** — e.g. bank × KYC-type, feature × user-segment.
 - **Any list with an Owner or Blocking column** — Open Questions, Dependencies.
 

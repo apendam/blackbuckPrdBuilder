@@ -1,6 +1,6 @@
 ---
 name: prd-builder
-description: Walks a Blackbuck Product Manager through writing a PRD (Product Requirements Document) end-to-end, following Blackbuck's house PRD methodology — objective, problem statement, sizing, team/vertical scope, context loading, skeleton-first drafting, then full PRD expansion with Mermaid flowcharts and explicit Success/Failure/Timeout coverage for every API integration. Use this skill whenever the user asks to write, draft, spec out, or build a PRD, product spec, or feature requirements doc for Blackbuck, or mentions objective/problem statement/sizing/scope for a new feature, or references Blackbuck verticals (Sales, Toll, Fuel, TZF, Payments, GPS, Supply, Load Board, Finserve, Frontend/Website, Android, BB Pro) in the context of planning a product change — even if they don't say "PRD" explicitly, e.g. "help me spec out X feature" or "I need to plan the rollout for Y."
+description: Walks a Blackbuck Product Manager through writing a PRD (Product Requirements Document) end-to-end, following Blackbuck's house PRD methodology — objective, problem statement, sizing, team/vertical scope, context loading, skeleton-first drafting, then a concise, business-logic-only PRD with Mermaid flowcharts and a business-level Success/Failure/Timeout outcome for every integration. Use this skill whenever the user asks to write, draft, spec out, or build a PRD, product spec, or feature requirements doc for Blackbuck, or mentions objective/problem statement/sizing/scope for a new feature, or references Blackbuck verticals (Sales, Toll, Fuel, TZF, Payments, GPS, Supply, Load Board, Finserve, Frontend/Website, Android, BB Pro) in the context of planning a product change — even if they don't say "PRD" explicitly, e.g. "help me spec out X feature" or "I need to plan the rollout for Y."
 ---
 
 # PRD Builder
@@ -11,12 +11,14 @@ You are helping a Blackbuck Product Manager write a PRD. This skill encodes thei
 
 Blackbuck PRDs get read and executed by engineers across many independent verticals (Sales, Toll, Fuel, TZF, Payments, GPS, Supply, Load Board, Finserve, Frontend, Android, BB Pro). A PRD that jumps straight to a full draft tends to bake in the PM's unstated assumptions before anyone's checked them, and it tends to quietly change flows in verticals the PM doesn't have full visibility into. The phase gates exist to catch both problems early, while they're still cheap to fix — not as process for its own sake. If you find yourself wanting to skip ahead because you think you already know what the PM wants, that instinct is exactly what this process exists to override.
 
-## The three rules that override everything else
+## The four rules that override everything else
 
 1. **Never assume — ask.** If a fact you need (which team owns a flow, whether a change is additive or breaking, what "success" means numerically, what happens on a specific error code) isn't stated, ask a specific clarifying question. A vague or generically-hedged PRD section is worse than a section that plainly says "TBD — need confirmation from the PM on X."
 2. **Flag drastic changes to existing flow.** If what the PM is describing would change how an existing, already-shipped flow behaves — not just add something new alongside it — say so explicitly and ask whether that's intended before writing it into the PRD as if it were already settled.
 
 3. **Flag contradictions with a source spec.** If the design you're writing contradicts a source spec the PM gave you (for example a sibling vendor's PRD, an earlier version, or a parity target), say so, ask which one governs, and write that decision into the PRD's Open Questions or a decision log. A deliberate divergence with no recorded decision looks identical to an omission.
+
+4. **Business logic only, and short.** The PRD states what the product must do and why: rules, decisions, thresholds, state changes, customer and money outcomes, owners. It never contains endpoints, request/response fields, JSON, class, method, table or topic names, file paths or line numbers, repo-internal mechanics, or retry/config constants taken from code. Engineers read the code for those; a PRD that repeats them goes stale and buries the decisions. Keep every section as short as it can be while remaining unambiguous: one idea per bullet, no restating the same rationale in several sections, no process narration ("verified", "searched and found none"). See `references/style/tone-and-conventions.md` for the length budget and the exclusion list.
 
 Apply these rules throughout every phase below, not just once at the start.
 
@@ -46,7 +48,7 @@ Work through this in order:
 5. **Check staleness before treating anything as current**: a flow file with a `last_verified` date older than 90 days should be flagged to the PM as "likely stale, worth re-verifying" rather than cited as settled fact. The same goes for any vertical file that's still a placeholder — say so plainly and ask the PM to walk you through that vertical's relevant flows, owning repos, and jargon conversationally instead of proceeding on guesswork. Don't silently fabricate vertical or cross-repo context to fill a gap.
 
 Then ask the PM for three more things before moving on:
-- Any API documentation relevant to this specific PRD (pasted text, a file, or a link).
+- Any API documentation relevant to this specific PRD (pasted text, a file, or a link). Use it to understand behaviour and to ask better questions; do not reproduce it in the PRD.
 - A high-level description of the product flow to be built — PDF, image, text file, or pasted text all work.
 - **Any existing spec for the same capability** — another vendor's or product's version, an earlier version, or a parity target. Load each one as a **source spec**. Code and repos show what is built today; only a source spec shows rules that were specified but never built or built differently, and a PRD written from code alone silently drops those.
 
@@ -56,13 +58,13 @@ Don't move to phase 6 until you have a working understanding of both, or the PM 
 
 **First, ask the PM to pick a skeleton depth** — this is a distinct choice from Sizing (phase 3, which is about business impact, not documentation effort):
 - **Quick** — a single-pass skeleton, drafted directly (see below) and presented immediately.
-- **Thorough** — the same skeleton, but before it's presented, run one internal self-critique pass that hunts specifically for missed branches, missed API touchpoints, and missed edge cases. Ground this pass **only** in material you've already loaded — the vertical files, the system-map flow files, and the API docs/flow description gathered in phase 5. Never surface a "finding" that's just a plausible-sounding invented scenario with nothing backing it; an ungrounded edge case is worse than no edge case, because it looks like diligence while actually being a guess. Fold real findings into the skeleton as structural markers (an added sub-heading, an inline `[EDGE CASE: ...]` flag, an extra `[API: ...]` marker) — not as resolved prose explaining the edge case in full. The skeleton must stay a skeleton regardless of which depth you picked; "Thorough" makes it a more complete skeleton, not a partial draft.
+- **Thorough** — the same skeleton, but before it's presented, run one internal self-critique pass that hunts specifically for missed branches, missed integration touchpoints, and missed edge cases. Ground this pass **only** in material you've already loaded — the vertical files, the system-map flow files, and the API docs/flow description gathered in phase 5. Never surface a "finding" that's just a plausible-sounding invented scenario with nothing backing it; an ungrounded edge case is worse than no edge case, because it looks like diligence while actually being a guess. Fold real findings into the skeleton as structural markers (an added sub-heading, an inline `[EDGE CASE: ...]` flag, an extra `[INTEGRATION: ...]` marker) — not as resolved prose explaining the edge case in full. The skeleton must stay a skeleton regardless of which depth you picked; "Thorough" makes it a more complete skeleton, not a partial draft.
 
 If the PM picks Quick but what you loaded in phases 4-5 clearly involves multiple verticals or a cross-repo touchpoint from the system map, say so once and ask if they still want Quick — don't silently override their choice, and don't silently ignore an obvious mismatch either.
 
 **Before drafting, build a use-case inventory (both depths) if the PM gave you any source spec.** List every distinct use case, rule and decision table in each source spec. Map each one to a skeleton section, to an Open Question, or to an explicit entry in the "Considered and excluded" section with a one-line reason. An unmapped item blocks the skeleton: resolve it or ask the PM. Decision matrices and tables in a source spec go into the skeleton as table requirements, not as prose summaries, because a table flattened into a sentence loses the rows nobody reads closely. Keep the inventory itself out of the PRD body unless the PM asks for it; the mapping shows up through the sections, the Open Questions and the exclusions.
 
-**Then draft the skeleton.** Using `references/style/prd-skeleton.md` as the section template, produce **a skeleton only**: section headings, sub-headings, and a minimal (1-3 sentence) explanation of what will go in each section — not the full prose. Note in-line where a flowchart will be needed and where an API touchpoint will need the Success/Failure/Timeout treatment, but don't write either one out yet — that's phase 8's job.
+**Then draft the skeleton.** Using `references/style/prd-skeleton.md` as the section template, produce **a skeleton only**: section headings, sub-headings, and a minimal (1-3 sentence) explanation of what will go in each section — not the full prose. Note in-line where a flowchart will be needed and where an integration touchpoint will need a business-level outcome entry, but don't write either one out yet — that's phase 8's job.
 
 Present the skeleton and stop there. Do not continue into full-PRD writing in the same turn.
 
@@ -72,9 +74,10 @@ The PM will give edits, feedback, or point out gaps. Where their feedback reveal
 ### 8. Full PRD generation
 Expand the confirmed skeleton section by section into the full PRD:
 - Add flowcharts as Mermaid diagrams wherever a flow branches or would be hard to follow in prose alone. See `references/style/tone-and-conventions.md` for how much stays in prose versus the diagram.
-- For every API or system integration touchpoint, use `references/style/api-contract-block.md` as the template and cover **all three** of Success, Failure, and Timeout. This is non-negotiable — an API section missing one of the three is incomplete, not "good enough for now."
+- For every integration touchpoint (an internal service or external vendor the flow depends on), add a short outcome entry using `references/style/integration-outcomes.md`: what the customer and the money/state look like on Success, Failure and Timeout. All three are still required, but stated as business outcomes, not API contracts. Do not name endpoints, fields or payloads.
+- Before writing a section, strip anything on the exclusion list in `references/style/tone-and-conventions.md`. After the full draft, check it against the length budget there and cut before presenting.
 - Match the tone, table conventions, and jargon guidance in `references/style/tone-and-conventions.md`.
-- **Mark where each requirement came from**: code-derived (read from a repo) or spec-derived (from a source spec or the PM). A code-derived requirement that touches a business rule needs a check against the source specs before it's written as settled, since code shows current behaviour, not intent.
+- **Mark where each requirement came from** with a one-word tag only where it matters: `[code]` (current behaviour read from a repo, no citation), `[spec]` (a source spec) or `[PM]`. A `[code]` requirement that touches a business rule needs a check against the source specs before it's written as settled, since code shows current behaviour, not intent.
 
 **Coverage check before output.** After the full draft, extract the use cases from each source spec and from the draft, then match them: covered, partial (say what is missing or different), or missing. Re-check every partial and missing result with a second pass that tries to find coverage the first missed. Report the counts and the gaps to the PM, and resolve each gap by adding it, recording it under "Considered and excluded", or logging a decision. Skip this only when the PM gave no source spec.
 ### 9. Output
@@ -87,8 +90,8 @@ Before finishing, ask one more thing: "Anything we learned while writing this PR
 | File | When to load it |
 |---|---|
 | `references/style/prd-skeleton.md` | Phase 6 onward — the section-by-section template |
-| `references/style/api-contract-block.md` | Phase 8 — whenever writing up an API/integration touchpoint |
-| `references/style/tone-and-conventions.md` | Phase 8 — tone, formatting, jargon conventions |
+| `references/style/integration-outcomes.md` | Phase 8 — whenever writing up an integration touchpoint |
+| `references/style/tone-and-conventions.md` | Phase 8 — tone, length budget, exclusion list, jargon conventions |
 | `references/verticals/<name>.md` | Phase 5 — only for verticals selected in phase 4 |
 | `references/system-map/README.md` | Phase 5 — always, regardless of scope |
 | `references/system-map/flows/<id>.md` | Phase 5 — only flows matching the selected scope, per the cross-reference step above |
@@ -111,4 +114,4 @@ Code pointers everywhere (vertical files and flow files alike) use this exact fo
 [permalink@<short-sha>](<full-SHA-pinned-URL>#L<line>) · verified <YYYY-MM-DD>
 ```
 
-If you're about to write something into a PRD that depends on exact current behavior (a request/response shape, a validation rule, a specific error code), re-open the live repo and re-read the code — don't treat a pointer's cited line range as still accurate, especially past its 90-day staleness window.
+These pointers are for you and the PM's engineers, never for the PRD body. If a PRD rule depends on exact current behavior (a validation rule, a threshold, a specific error case), re-open the live repo and re-read the code, then state only the resulting business rule in the PRD — don't treat a pointer's cited line range as still accurate, especially past its 90-day staleness window.
