@@ -1,6 +1,6 @@
 ---
 name: prd-builder
-description: Walks a Blackbuck Product Manager through writing a PRD (Product Requirements Document) end-to-end, following Blackbuck's house PRD methodology — objective, problem statement, sizing, team/vertical scope, context loading, skeleton-first drafting, then a concise, business-logic-only PRD with Mermaid flowcharts and a business-level Success/Failure/Timeout outcome for every integration. Use this skill whenever the user asks to write, draft, spec out, or build a PRD, product spec, or feature requirements doc for Blackbuck, or mentions objective/problem statement/sizing/scope for a new feature, or references Blackbuck verticals (Sales, Toll, Fuel, TZF, Payments, GPS, Supply, Load Board, Finserve, Frontend/Website, Android, BB Pro) in the context of planning a product change — even if they don't say "PRD" explicitly, e.g. "help me spec out X feature" or "I need to plan the rollout for Y."
+description: Walks a Blackbuck Product Manager through writing a PRD (Product Requirements Document) end-to-end, following Blackbuck's house PRD methodology — objective, problem statement, sizing, team/vertical scope, context loading, skeleton-first drafting, then a concise, business-logic-only PRD with Mermaid flowcharts and a business-level Success/Failure/Timeout outcome for every integration, then attaching Figma designs (the PM's existing links, or ones generated from the PRD) as links in the Design section. Use this skill whenever the user asks to write, draft, spec out, or build a PRD, product spec, or feature requirements doc for Blackbuck, or mentions objective/problem statement/sizing/scope for a new feature, or references Blackbuck verticals (Sales, Toll, Fuel, TZF, Payments, GPS, Supply, Load Board, Finserve, Frontend/Website, Android, BB Pro) in the context of planning a product change — even if they don't say "PRD" explicitly, e.g. "help me spec out X feature" or "I need to plan the rollout for Y."
 ---
 
 # PRD Builder
@@ -77,11 +77,36 @@ Expand the confirmed skeleton section by section into the full PRD:
 - For every integration touchpoint (an internal service or external vendor the flow depends on), add a short outcome entry using `references/style/integration-outcomes.md`: what the customer and the money/state look like on Success, Failure and Timeout. All three are still required, but stated as business outcomes, not API contracts. Do not name endpoints, fields or payloads.
 - Before writing a section, strip anything on the exclusion list in `references/style/tone-and-conventions.md`. After the full draft, check it against the length budget there and cut before presenting.
 - Match the tone, table conventions, and jargon guidance in `references/style/tone-and-conventions.md`.
+- Before leaving this phase, search the draft for leftover skeleton markers (`[FLOWCHART`, `[INTEGRATION`, `[EDGE CASE`). Every one must have been expanded or resolved, and the marker removed. The source tags below (`[code]`, `[spec]`, `[PM]`) are intentional and stay.
 - **Mark where each requirement came from** with a one-word tag only where it matters: `[code]` (current behaviour read from a repo, no citation), `[spec]` (a source spec) or `[PM]`. A `[code]` requirement that touches a business rule needs a check against the source specs before it's written as settled, since code shows current behaviour, not intent.
 
 **Coverage check before output.** After the full draft, extract the use cases from each source spec and from the draft, then match them: covered, partial (say what is missing or different), or missing. Re-check every partial and missing result with a second pass that tries to find coverage the first missed. Report the counts and the gaps to the PM, and resolve each gap by adding it, recording it under "Considered and excluded", or logging a decision. Skip this only when the PM gave no source spec.
+
+### 8b. Design — STOP at the brief
+Runs once the full PRD and its coverage check exist, and before output. Designing earlier would design against a skeleton the PM may still change.
+
+Ask the PM one question first: **do you already have Figma designs for this PRD, or should we generate them?** Then follow the `figma-designer` skill (`.claude/skills/figma-designer/SKILL.md`):
+- **PM has links** → its Mode B: check access to each link, summarise the screens and states, and flag section 7 flows that have no frame.
+- **No designs** → its Mode A: derive screens and states from PRD sections 5, 6, 7 and 15, write the **design brief**, and **stop for the PM's confirmation before drawing anything**. After confirmation, build the screens in Figma.
+- **Some of each** → Mode B for the supplied links, Mode A for the flows still missing a design.
+
+Do not skip the brief gate. If the Figma connector or its skills are missing, tell the PM and continue with `Design: not yet available, owner: <PM>` in section 9; do not describe screens in prose to fill the gap.
+
+The skill returns a **Design handoff block**: a Figma file link, one frame link per screen, the states each frame shows, design assumptions and open design gaps. Rule 4 applies to this block like the rest of the PRD: screen names and plain-language states only, no route names, constants, field names or component names. Rules 1 and 2 apply too: a design assumption goes to the PM to confirm, and a design that changes an already-shipped screen is flagged, not presented as settled.
+
+**Where designs go in the PRD (links only, never images):**
+- **Section 9 (Design):** paste the handoff block.
+- **Section 7:** under each sub-flow that has designed screens, one line `Design: <frame link(s)>`. Do not restate the screen layout in prose.
+- **Section 15:** each design assumption and open design gap as a one-line row. A state the flow describes but the design leaves out goes here too. If a design shows a state or dependency the PRD does not cover, raise it with the PM and add it to the PRD or to Open Questions; do not absorb it silently.
+
+Show the PM the handoff block and the resulting PRD edits, and wait for confirmation before phase 9.
+
 ### 9. Output
-Write the final PRD to a Google Doc via the Google Drive connector available in this session, matching the format and style of the PM's own reference PRDs (build it as a native Google Doc with real headings/tables, not pasted raw Markdown syntax). Also save a Markdown copy in-repo under `docs/prds/<kebab-case-title>.md` so there's a version-controlled source of truth. Tell the PM where both live.
+Write the final PRD to a Google Doc via the Google Drive connector available in this session, matching the format and style of the PM's own reference PRDs (build it as a native Google Doc with real headings/tables, not pasted raw Markdown syntax). Design links from phase 8b appear as real hyperlinks (in the section 9 table and the section 7 `Design:` lines), not as pasted URLs. Also save a Markdown copy in-repo under `docs/prds/<kebab-case-title>.md` so there's a version-controlled source of truth. Tell the PM where both live, and include the Figma file link in your closing message.
+
+How to build the Doc (tested 2026-10-16): create `docs/prds/` if it does not exist and write the Markdown copy first. Run `python3 -I .claude/skills/prd-builder/scripts/md_to_gdoc_html.py docs/prds/<slug>.md <tmp>.html`, then create the Doc with the Drive connector's `create_file` using `contentMimeType: text/html` and the HTML as `textContent`; Drive converts it into a native Google Doc. Read it back with `read_file_content` and confirm the headings, tables and every Design hyperlink survived. Known limits:
+- Mermaid diagrams cannot render in a Google Doc. The script emits the source in a captioned monospace block, so every diagram must have a nested-bullet or table walkthrough beside it that carries the meaning for Doc readers.
+- The connector's read-back double-escapes table cells, so links inside tables appear as `\[text\](url)` in the read-back. Open the Doc once to confirm they are clickable.
 
 Before finishing, ask one more thing: "Anything we learned while writing this PRD that should update a vertical file or the system map?" If yes, update the relevant `references/verticals/<name>.md` and/or `references/system-map/flows/<id>.md` (and its row in `references/system-map/README.md`) right then, including bumping `last_verified`. This is what keeps the knowledge base current through normal use instead of needing a separate documentation effort.
 
@@ -95,6 +120,8 @@ Before finishing, ask one more thing: "Anything we learned while writing this PR
 | `references/verticals/<name>.md` | Phase 5 — only for verticals selected in phase 4 |
 | `references/system-map/README.md` | Phase 5 — always, regardless of scope |
 | `references/system-map/flows/<id>.md` | Phase 5 — only flows matching the selected scope, per the cross-reference step above |
+| `.claude/skills/figma-designer/SKILL.md` | Phase 8b — to attach Figma designs (existing links, or generated from the PRD) |
+| `scripts/md_to_gdoc_html.py` | Phase 9 — converts the Markdown copy to HTML for the Google Doc |
 
 Vertical filename mapping: Sales → `sales.md` · Toll → `toll.md` · Fuel → `fuel.md` · TZF → `tzf.md` · Payments → `payments.md` · GPS → `gps.md` · Supply → `supply.md` · Load Board → `load-board.md` · Finserve → `finserve.md` · Frontend/Website → `frontend.md` · Android → `android.md` · BB Pro → `bb-pro.md`.
 
