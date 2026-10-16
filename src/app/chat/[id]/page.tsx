@@ -37,6 +37,7 @@ export default async function ChatPage({
       initialSavedPrd={conversation.prdMarkdownPath}
       initialGoogleDocUrl={conversation.googleDocUrl}
       initialVerificationFindings={conversation.verificationFindings}
+      initialTurnInProgress={!!conversation.turnInProgressSince}
       userName={session.user.name}
       userEmail={session.user.email}
       signOutAction={handleSignOut}

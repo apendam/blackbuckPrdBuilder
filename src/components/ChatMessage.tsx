@@ -23,7 +23,7 @@ function TruckAvatar() {
 function Prose({ content, invert }: { content: string; invert?: boolean }) {
   return (
     <div
-      className={`text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 ${
+      className={`bb-content text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 ${
         invert ? "text-bb-bg" : "text-bb-text"
       }`}
     >
@@ -157,7 +157,7 @@ export function ChatMessage({ message }: { message: ChatMessageType }) {
       <TruckAvatar />
       <div className="flex flex-col items-start">
         <div className="max-w-[75%] rounded-lg border-l-[3px] border-bb-red bg-bb-surface px-4 py-3">
-          <div className="mb-1 text-[10px] font-semibold tracking-widest text-bb-red">
+          <div className="mb-1 text-[10px] font-semibold lowercase tracking-wide text-bb-red">
             PRD BUILDER
           </div>
           <Prose content={message.content} />

@@ -44,6 +44,10 @@ next-env.d.ts
 # generated PRD output (not source)
 data/prds/*.md
 
+# generated Archify diagram PNGs (not source -- re-rendered from the PRD's
+# own archify fences whenever needed; see src/lib/archify.ts)
+/public/archify-diagrams/
+
 # prisma
 /prisma/*.db
 /prisma/*.db-journal

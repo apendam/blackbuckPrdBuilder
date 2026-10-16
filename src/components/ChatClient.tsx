@@ -21,6 +21,7 @@ import {
   VerificationFinding,
 } from "@/lib/types";
 import { classifyApiError, FriendlyError } from "@/lib/errors";
+import type { ConversationView } from "@/lib/conversations";
 import { costForBreakdown, formatCost, formatTokenCount } from "@/lib/pricing";
 
 const PHASE_HEADLINE: Record<Phase, string> = {
@@ -50,6 +51,7 @@ export function ChatClient({
   initialSavedPrd,
   initialGoogleDocUrl,
   initialVerificationFindings,
+  initialTurnInProgress,
   userName,
   userEmail,
   signOutAction,
@@ -63,6 +65,7 @@ export function ChatClient({
   initialSavedPrd: string | null;
   initialGoogleDocUrl: string | null;
   initialVerificationFindings: VerificationFinding[];
+  initialTurnInProgress: boolean;
   userName?: string | null;
   userEmail?: string | null;
   signOutAction: () => Promise<void>;
@@ -90,6 +93,14 @@ export function ChatClient({
   const [refreshOpen, setRefreshOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  // True when a turn is running for this conversation server-side that THIS
+  // tab didn't itself start the fetch for -- i.e. the PM sent a message,
+  // navigated away (or closed the tab) before it finished, and has now come
+  // back or reopened it. The turn keeps running regardless of the browser
+  // connection (see startConversationTurn in conversations.ts), so this just
+  // polls until the server-persisted state shows it's done, rather than
+  // requiring the exact same tab/fetch to still be alive to see the result.
+  const [turnInProgress, setTurnInProgress] = useState(initialTurnInProgress);
   const kickedOff = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -186,6 +197,35 @@ export function ChatClient({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, skeletonSections]);
 
+  // Polls the persisted conversation while a turn we didn't ourselves start
+  // the fetch for is still running (see the initialTurnInProgress prop) --
+  // picks up the finished result (or the next bit of progress) without
+  // needing the original browser tab/request to still be connected.
+  useEffect(() => {
+    if (!turnInProgress) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/conversations/${conversationId}`);
+        if (!res.ok) return;
+        const data: { conversation?: ConversationView } = await res.json();
+        const conv = data.conversation;
+        if (!conv) return;
+        setMessages(conv.messages);
+        setPhaseState({ current: conv.currentPhase, completed: conv.completedPhases });
+        if (conv.title) setTitle(conv.title);
+        setSkeletonSections(conv.skeletonSections);
+        setSkeletonHistory(conv.skeletonHistory);
+        if (conv.prdMarkdownPath) setSavedPrdPath(conv.prdMarkdownPath);
+        if (conv.googleDocUrl) setGoogleDocUrl(conv.googleDocUrl);
+        setVerificationFindings(conv.verificationFindings);
+        if (!conv.turnInProgressSince) setTurnInProgress(false);
+      } catch {
+        // Transient network hiccup -- just try again on the next tick.
+      }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [turnInProgress, conversationId]);
+
   const conversationUsage = useMemo(() => {
     const byModel = messages.flatMap((m) => m.usage?.byModel ?? []);
     const totalTokens = byModel.reduce((sum, m) => sum + m.inputTokens + m.outputTokens, 0);
@@ -235,9 +275,9 @@ export function ChatClient({
                 <button
                   onClick={startEditingTitle}
                   title="Click to rename"
-                  className="group mb-1.5 flex items-center gap-2 text-left"
+                  className="group mb-1.5 flex items-center gap-2 text-left normal-case"
                 >
-                  <h1 className="text-2xl font-bold text-bb-text">{title || "(untitled PRD)"}</h1>
+                  <h1 className="font-display text-3xl font-medium tracking-tight text-bb-text">{title || "(untitled PRD)"}</h1>
                   <svg
                     width="14"
                     height="14"
@@ -255,7 +295,7 @@ export function ChatClient({
                   </svg>
                 </button>
               )}
-              <div className="mb-1 text-xs font-semibold tracking-widest text-bb-red">
+              <div className="mb-1 text-xs font-semibold lowercase tracking-wide text-bb-red">
                 PHASE {phaseIndex + 1} — {PHASE_LABELS[phaseState.current].toUpperCase()}
               </div>
               <p className="text-sm text-bb-text-secondary">{PHASE_HEADLINE[phaseState.current]}</p>
@@ -274,17 +314,22 @@ export function ChatClient({
                 href="/"
                 className="rounded-full border border-bb-border px-3 py-1.5 text-xs font-semibold text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
               >
-                ← Dashboard
+                Dashboard
               </Link>
             </div>
           </div>
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto">
-            <div className="space-y-4 px-8 py-6">
+            {/* Capped and centered so message bubbles (already relative to
+                this column, not the viewport) read like a real desktop chat
+                column instead of stretching edge-to-edge on a wide display --
+                unconstrained, a 75%-wide bubble on a 1728px Mac screen would
+                be well over 1000px wide. */}
+            <div className="mx-auto w-full max-w-3xl space-y-4 px-8 py-6">
               {messages.map((m, i) => (
                 <ChatMessageBubble key={i} message={m} />
               ))}
-              {loading && <TypingIndicator phase={phaseState.current} />}
+              {(loading || turnInProgress) && <TypingIndicator phase={phaseState.current} />}
               {error && (
                 <div className="rounded-lg border border-bb-red bg-bb-red-dim px-4 py-3 text-sm text-bb-text">
                   <div className="mb-0.5 font-semibold">{error.title}</div>
@@ -332,17 +377,19 @@ export function ChatClient({
             </div>
 
             {showSkeletonEditor && (
-              <SkeletonEditor
-                sections={skeletonSections}
-                history={skeletonHistory}
-                disabled={loading}
-                onSubmitFeedback={(text) => sendTurn(text)}
-                onApprove={() => sendTurn("The skeleton looks good — please expand it into the full PRD.")}
-              />
+              <div className="mx-auto w-full max-w-3xl">
+                <SkeletonEditor
+                  sections={skeletonSections}
+                  history={skeletonHistory}
+                  disabled={loading || turnInProgress}
+                  onSubmitFeedback={(text) => sendTurn(text)}
+                  onApprove={() => sendTurn("The skeleton looks good — please expand it into the full PRD.")}
+                />
+              </div>
             )}
           </div>
 
-          <ChatInput onSend={sendTurn} disabled={loading} />
+          <ChatInput onSend={sendTurn} disabled={loading || turnInProgress} />
         </main>
       </div>
 

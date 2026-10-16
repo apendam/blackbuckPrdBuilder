@@ -65,6 +65,8 @@ export async function POST(
       hadUnrenderedMermaid: doc.hadUnrenderedMermaid,
       imagesEmbedded: doc.imagesEmbedded,
       imagesFailed: doc.imagesFailed,
+      usedFallback: doc.usedFallback,
+      fallbackReason: doc.fallbackReason,
     });
   } catch (err) {
     console.error(`POST /api/conversations/${id}/export-google-doc failed:`, err);

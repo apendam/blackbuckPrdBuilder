@@ -158,6 +158,44 @@ export const TOOL_DEFS: ToolDef[] = [
     },
   },
   {
+    name: "render_archify_diagram",
+    description:
+      "Render a diagram from typed JSON IR via Archify (replaces Mermaid for all flowcharts/sequence diagrams in this app -- see 'references/style/archify-diagrams.md' for the schema and worked examples). Validates and renders in one call. On success, returns the exact fenced-code-block text to paste into the PRD content at that point (an `archify` fence containing a small pointer, not the raw IR) -- use it verbatim. On failure, returns Archify's own diagnostics (code/message/subject/evidence/supportedFixes per finding) -- fix the IR per those diagnostics and call this again; do not guess blindly at what might be wrong.",
+    schema: {
+      type: "object",
+      properties: {
+        type: {
+          type: "string",
+          enum: ["architecture", "workflow", "sequence", "dataflow", "lifecycle"],
+          description: "Archify diagram type -- 'workflow' for branching flows, 'sequence' for multi-actor call sequences, per the reference file's guidance on which to use when.",
+        },
+        title: { type: "string", description: "Short human-readable diagram title" },
+        ir: {
+          type: "object",
+          description: "The full Archify JSON IR document for this diagram type, per its schema (schema_version, diagram_type, meta, and that type's structural arrays).",
+        },
+      },
+      required: ["type", "title", "ir"],
+    },
+  },
+  {
+    name: "apply_skill_change",
+    description:
+      "Write a change to the PRD Builder skill's OWN methodology files (SKILL.md itself, or a file under references/, e.g. 'references/style/tone-and-conventions.md') -- NOT this PRD's content, and NEVER a Blackbuck product repo. This changes how every future PRD gets written, for every PM using this tool, so only call this after the PM has explicitly confirmed a proposed change (shown in a PRIOR chat turn, never the same turn) with a clear instruction to actually apply/update/commit it -- 'looks good' or agreeing the proposed text reads well is NOT that confirmation on its own; the PM must clearly ask for it to be written. If in doubt whether they meant to confirm, ask rather than call this.",
+    schema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Path relative to the skill's root, e.g. 'SKILL.md' or 'references/style/tone-and-conventions.md'. Must end in .md.",
+        },
+        content: { type: "string", description: "The full new content of the file (not a diff)" },
+        summary: { type: "string", description: "One sentence on what changed, for the confirmation message shown to the PM" },
+      },
+      required: ["path", "content", "summary"],
+    },
+  },
+  {
     name: "save_skeleton",
     description:
       "Save the current skeleton as structured sections/pointers, at phase 6 (initial draft) and again after every phase 7 revision. This drives the PM's skeleton editor UI -- always call this instead of (or in addition to) describing the skeleton in chat text, so the PM can comment on/delete/add individual pointers directly rather than only replying in prose. Send the FULL current skeleton every time, not a diff.",

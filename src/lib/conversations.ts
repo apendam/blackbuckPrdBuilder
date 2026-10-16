@@ -31,6 +31,10 @@ export interface ConversationView {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  // Non-null while a chat turn is actually running server-side for this
+  // conversation, regardless of whether the browser that started it is still
+  // connected -- see startConversationTurn/clearTurnInProgress below.
+  turnInProgressSince: string | null;
 }
 
 function isKnownPhase(value: string): value is Phase {
@@ -76,6 +80,7 @@ function toView(row: Conversation): ConversationView {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+    turnInProgressSince: row.turnInProgressSince ? row.turnInProgressSince.toISOString() : null,
   };
 }
 
@@ -120,6 +125,56 @@ export async function listConversations(
   return views;
 }
 
+// Matches this app's own observed real-turn durations (a thorough full PRD
+// has taken 10-30 minutes) -- anything marked in-progress longer than this
+// is almost certainly a crashed/killed server process, not a genuinely
+// still-running turn, so it's safe to let a fresh request steal the lock
+// rather than leaving the conversation permanently stuck.
+const STALE_TURN_MS = 30 * 60 * 1000;
+
+// Claims the "a turn is running" lock and persists the PM's own message
+// immediately, in one atomic write -- so even if the server process dies or
+// the PM never comes back to this tab, their message isn't silently lost,
+// and a fresh page load can show it (with a "still generating" indicator)
+// instead of looking like it was never sent. Returns false if another turn
+// already holds the lock and isn't stale yet -- the caller should refuse to
+// start a second, overlapping turn rather than racing saveConversationTurn
+// calls against each other.
+export async function startConversationTurn(
+  userId: string,
+  id: string,
+  pendingMessages: ChatMessage[]
+): Promise<boolean> {
+  const claimed = await prisma.conversation.updateMany({
+    where: { id, userId, turnInProgressSince: null },
+    data: { messages: JSON.stringify(pendingMessages), turnInProgressSince: new Date() },
+  });
+  if (claimed.count === 1) return true;
+
+  const staleCutoff = new Date(Date.now() - STALE_TURN_MS);
+  const stolen = await prisma.conversation.updateMany({
+    where: { id, userId, turnInProgressSince: { lt: staleCutoff } },
+    data: { messages: JSON.stringify(pendingMessages), turnInProgressSince: new Date() },
+  });
+  if (stolen.count === 1) {
+    console.warn(
+      `Conversation ${id} had a turnInProgressSince lock older than ${STALE_TURN_MS / 60000}min -- treating it as crashed and starting a new turn.`
+    );
+  }
+  return stolen.count === 1;
+}
+
+// Releases the lock without touching anything else -- used when a turn ends
+// in an error (runChatTurn threw) so the conversation isn't left permanently
+// "in progress." The normal success path clears it as part of
+// saveConversationTurn's single write instead of a second round-trip.
+export async function clearTurnInProgress(userId: string, id: string): Promise<void> {
+  await prisma.conversation.updateMany({
+    where: { id, userId },
+    data: { turnInProgressSince: null },
+  });
+}
+
 export async function saveConversationTurn(
   userId: string,
   id: string,
@@ -150,6 +205,7 @@ export async function saveConversationTurn(
       currentPhase: phaseState.current,
       completedPhases: JSON.stringify(phaseState.completed),
       phaseLog: JSON.stringify(phaseLog),
+      turnInProgressSince: null,
       ...(extra.title ? { title: extra.title } : {}),
       ...(extra.verticals ? { verticals: JSON.stringify(extra.verticals) } : {}),
       ...(extra.skeletonSections ? { skeletonSections: JSON.stringify(extra.skeletonSections) } : {}),

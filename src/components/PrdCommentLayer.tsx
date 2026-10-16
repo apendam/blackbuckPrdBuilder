@@ -359,7 +359,7 @@ export function PrdCommentLayer({
   // highlighting pass and live on indefinitely -- if they closed directly
   // over `commentDraft`/`replyDraft`, they'd keep checking whatever those
   // were at attachment time, not whatever they become later (e.g. the
-  // instant *after* clicking "+ reply" sets replyDraft, which happens well
+  // instant *after* clicking "Reply" sets replyDraft, which happens well
   // after the marks were last (re)attached). Mirroring both into refs lets
   // that stale closure read the current value instead.
   const commentDraftRef = useRef(commentDraft);
@@ -1170,7 +1170,7 @@ export function PrdCommentLayer({
                 onClick={() => startReply(anchor, c.id)}
                 className="ml-4 mt-1 text-[11px] text-bb-text-tertiary underline decoration-dotted hover:text-bb-text-secondary"
               >
-                + reply
+                Reply
               </button>
             )}
           </div>
@@ -1196,7 +1196,7 @@ export function PrdCommentLayer({
             onClick={() => startNewComment(anchor)}
             className="mt-1 text-[11px] text-bb-text-tertiary underline decoration-dotted hover:text-bb-text-secondary"
           >
-            + add another comment
+            Comment
           </button>
         )}
       </>
@@ -1232,7 +1232,7 @@ export function PrdCommentLayer({
           </p>
         )}
         {finding.citation && (
-          <p className="mb-2 font-mono text-[10px] text-bb-text-tertiary">{finding.citation}</p>
+          <p className="mb-2 font-mono text-[10px] text-bb-text-tertiary [overflow-wrap:anywhere]">{finding.citation}</p>
         )}
 
         {(finding.replies.length > 0 || localReplies.length > 0) && (
@@ -1353,8 +1353,12 @@ export function PrdCommentLayer({
 
   return (
     <div className="relative">
-      <div ref={containerRef} className="prd-print-area relative">
-        <DocumentPanel content={content} onReady={() => setContentReady(true)} />
+      {/* Full-width on screen by request. When the fixed feedback panel is open it
+          would sit on top of the right edge, so reserve its width as padding. */}
+      <div className={`w-full transition-[padding] print:pr-0 ${panelOpen ? "lg:pr-[26rem]" : ""}`}>
+        <div ref={containerRef} className="prd-print-area bb-content relative">
+          <DocumentPanel content={content} onReady={() => setContentReady(true)} />
+        </div>
       </div>
 
       {hoverPopup && (
@@ -1559,13 +1563,13 @@ export function PrdCommentLayer({
               onClick={() => startNewComment(selectionPopup.anchor)}
               className="flex items-center gap-1 rounded px-2 py-1 text-xs text-bb-text hover:bg-bb-surface"
             >
-              💬 Comment
+              Comment
             </button>
             <button
               onClick={() => startAddLine(selectionPopup.anchor.quote)}
               className="flex items-center gap-1 rounded px-2 py-1 text-xs text-bb-text hover:bg-bb-surface"
             >
-              + Insert line here
+              Insert
             </button>
             <button
               onClick={() => setAskJudgeDraft({ anchor: selectionPopup.anchor, text: "" })}
@@ -1583,7 +1587,7 @@ export function PrdCommentLayer({
           className="fixed right-6 top-40 z-20 max-h-[65vh] w-96 overflow-y-auto rounded-lg border border-bb-border bg-bb-panel p-4 shadow-lg print:hidden"
         >
           <div className="mb-3 flex items-center justify-between">
-            <span className="text-sm font-bold text-bb-text">PRD feedback</span>
+            <span className="font-display text-base font-medium lowercase tracking-tight text-bb-text">PRD feedback</span>
             <button
               onClick={() => onPanelOpenChange(false)}
               className="text-bb-text-tertiary hover:text-bb-text"
@@ -1693,7 +1697,7 @@ export function PrdCommentLayer({
 
           {askEntries.length > 0 && (
             <div className="mb-3">
-              <div className="mb-1.5 text-xs font-bold text-bb-amber">Questions for the judge ({askEntries.length})</div>
+              <div className="mb-1.5 text-xs font-bold lowercase text-bb-amber">Questions for the judge ({askEntries.length})</div>
               {askEntries.map((a) => (
                 <div key={a.id} className="mb-2 rounded-md border-l-2 border-bb-amber bg-bb-surface p-2">
                   {renderAskEntry(a.id)}
@@ -1704,7 +1708,7 @@ export function PrdCommentLayer({
 
           {openJudgeFindings.length > 0 && (
             <div className="mb-3">
-              <div className="mb-1.5 text-xs font-bold text-bb-amber">
+              <div className="mb-1.5 text-xs font-bold lowercase text-bb-amber">
                 Verification ({openJudgeFindings.length} open)
               </div>
               {openJudgeFindings.map((f) => (
@@ -1720,7 +1724,7 @@ export function PrdCommentLayer({
             disabled={!hasPendingFeedback || submitting}
             className="w-full rounded-md bg-bb-red py-2 text-xs font-semibold text-white hover:bg-bb-red-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {submitting ? "Starting revision…" : "Submit feedback for revision"}
+            {submitting ? "Starting…" : "Submit"}
           </button>
         </div>
       )}

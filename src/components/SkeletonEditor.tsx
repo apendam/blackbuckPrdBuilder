@@ -322,7 +322,7 @@ export function SkeletonEditor({
             {sectionHistory.length > 0 && (
               <button
                 onClick={() => setOpenHistoryFor(historyOpen ? null : section.heading)}
-                className={`relative flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] ${
+                className={`bb-flat relative flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] ${
                   historyOpen ? "bg-bb-red text-white" : "text-bb-text-tertiary hover:text-bb-text"
                 }`}
                 title={`${sectionHistory.length} round${sectionHistory.length === 1 ? "" : "s"} of feedback on this section`}
@@ -394,7 +394,7 @@ export function SkeletonEditor({
                           aria-label="Comment"
                           title="Add a comment"
                         >
-                          💬
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>
                         </button>
                         <button
                           onClick={() => deletePointer(p.id)}
@@ -448,7 +448,7 @@ export function SkeletonEditor({
                         aria-label="Comment"
                         title="Add a comment"
                       >
-                        💬
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>
                       </button>
                       <button
                         onClick={() => startEditAddition(section.heading, a.id, a.text)}
@@ -521,7 +521,7 @@ export function SkeletonEditor({
             disabled={disabled || submitting || !hasPendingEdits}
             className="rounded-full border border-bb-border px-4 py-2 text-xs font-semibold text-bb-text-secondary hover:border-bb-red hover:text-bb-text disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {submitting ? "Submitting…" : "Submit feedback"}
+            {submitting ? "Submitting…" : "Submit"}
           </button>
           <button
             onClick={onApprove}
@@ -529,7 +529,7 @@ export function SkeletonEditor({
             title={hasPendingEdits ? "Submit or discard pending edits first" : undefined}
             className="rounded-full bg-bb-red px-4 py-2 text-xs font-semibold text-white hover:bg-bb-red-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {disabled ? "Expanding into full PRD…" : "Skeleton looks good — expand to full PRD"}
+            {disabled ? "Expanding…" : "Expand"}
           </button>
         </div>
       </div>

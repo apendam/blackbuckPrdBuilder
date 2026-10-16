@@ -18,8 +18,10 @@ import type { Root, RootContent, PhrasingContent } from "mdast";
 // requires per-cell index tracking that's a project of its own) -- flagged
 // in the PRD Builder's own output message to the PM, not silently downgraded.
 //
-// Mermaid diagrams: Docs can't render Mermaid source directly, and rendering
-// it to an image requires a real browser (mermaid.js needs DOM/canvas text
+// Mermaid diagrams (legacy -- kept so older, already-saved PRDs that still
+// have Mermaid fences keep exporting correctly; new PRDs use Archify, see
+// below): Docs can't render Mermaid source directly, and rendering it to an
+// image requires a real browser (mermaid.js needs DOM/canvas text
 // measurement) -- something this function, running server-side with no
 // browser, can't do itself. So it accepts already-rendered images from a
 // caller that DOES have a browser (the manual "Export to Google Doc" button,
@@ -29,6 +31,15 @@ import type { Root, RootContent, PhrasingContent } from "mdast";
 // create_google_doc tool call during a chat turn has no browser at all, so
 // this is the normal case there -- it falls back to inserting the raw
 // Mermaid source as monospace text, same as before.
+//
+// Archify diagrams: rendered server-side at authoring time (see
+// render_archify_diagram/archify.ts) into a PNG already sitting on disk --
+// no browser needed at export time at all. A fence here is just a small
+// `{id, title}` pointer; `archifyImages` (keyed by that id, resolved by the
+// caller after uploading each referenced PNG to Drive) supplies the actual
+// Drive URL + pixel size. Unlike Mermaid there's no human-readable "source"
+// to fall back to if the image insertion fails, so the fallback is just a
+// plain note naming the diagram.
 
 interface StyleRange {
   start: number;
@@ -90,11 +101,15 @@ export interface DocsConversionResult {
   hadMermaid: boolean;
   /** True if at least one Mermaid diagram fell back to raw-text (no image supplied for it). */
   hadUnrenderedMermaid: boolean;
+  hadArchify: boolean;
+  /** True if at least one Archify diagram fell back to a plain text note (no resolved image for its id). */
+  hadUnrenderedArchify: boolean;
 }
 
 export function markdownToDocsRequests(
   markdown: string,
-  mermaidImages?: (MermaidImage | null | undefined)[]
+  mermaidImages?: (MermaidImage | null | undefined)[],
+  archifyImages?: Map<string, MermaidImage>
 ): DocsConversionResult {
   const tree = unified().use(remarkParse).use(remarkGfm).parse(markdown) as Root;
 
@@ -105,6 +120,8 @@ export function markdownToDocsRequests(
   let hadTables = false;
   let hadMermaid = false;
   let hadUnrenderedMermaid = false;
+  let hadArchify = false;
+  let hadUnrenderedArchify = false;
   let mermaidIndex = 0;
 
   function appendInline(nodes: PhrasingContent[]) {
@@ -198,6 +215,33 @@ export function markdownToDocsRequests(
             break;
           }
           hadUnrenderedMermaid = true;
+        }
+        if (node.lang === "archify") {
+          hadArchify = true;
+          let parsed: { id?: unknown; title?: unknown } | null = null;
+          try {
+            parsed = JSON.parse(node.value);
+          } catch {
+            parsed = null;
+          }
+          const id = typeof parsed?.id === "string" ? parsed.id : null;
+          const title = typeof parsed?.title === "string" ? parsed.title : "Diagram";
+          const image = id ? archifyImages?.get(id) : undefined;
+          if (image) {
+            const imgIndex = text.length;
+            text += "\n";
+            imageInsertPoints.push({
+              index: imgIndex,
+              image,
+              fallbackText: `[Diagram: ${title} -- couldn't be embedded as an image]\n`,
+            });
+            break;
+          }
+          hadUnrenderedArchify = true;
+          const start = text.length;
+          text += `[Diagram: ${title} -- couldn't be embedded as an image]\n`;
+          styleRanges.push({ start, end: text.length, code: true });
+          break;
         }
         const start = text.length;
         const label = node.lang === "mermaid" ? "[Mermaid diagram source]\n" : "";
@@ -334,5 +378,5 @@ export function markdownToDocsRequests(
     };
   });
 
-  return { requests, imageRequests, hadTables, hadMermaid, hadUnrenderedMermaid };
+  return { requests, imageRequests, hadTables, hadMermaid, hadUnrenderedMermaid, hadArchify, hadUnrenderedArchify };
 }

@@ -96,6 +96,13 @@ model Conversation {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
   completedAt          DateTime?
+  // Set when a chat turn (skeleton/full-PRD generation, etc.) starts, cleared
+  // when it finishes -- lets a fresh page load (after the PM navigates away
+  // and back, or closes the tab) tell "still generating" apart from "nothing
+  // happened," since the turn itself keeps running server-side regardless of
+  // whether the browser stays connected. See startConversationTurn/
+  // clearTurnInProgress in conversations.ts.
+  turnInProgressSince  DateTime?
 
   user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   parent    Conversation?  @relation("Revisions", fields: [parentId], references: [id])

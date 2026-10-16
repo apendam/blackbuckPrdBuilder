@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { runChatTurn } from "@/lib/claude";
 import { getUserModelSettings } from "@/lib/modelSettings";
-import { getConversation, saveConversationTurn } from "@/lib/conversations";
+import {
+  getConversation,
+  saveConversationTurn,
+  startConversationTurn,
+  clearTurnInProgress,
+} from "@/lib/conversations";
 import { ChatTurnRequest, ChatTurnResponse, ChatMessage } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -36,6 +41,23 @@ export async function POST(req: NextRequest) {
     ...conversation.messages,
     { role: "user", content: body.message, attachments: body.attachments, at: userAt },
   ];
+
+  // Claims the "a turn is running" lock and persists the PM's own message
+  // immediately (before the potentially many-minute-long generation even
+  // starts) -- so a page reload mid-turn shows the message plus a "still
+  // generating" state, instead of looking like it vanished. Also refuses a
+  // second, overlapping turn on the same conversation rather than racing two
+  // saveConversationTurn calls against each other.
+  const claimed = await startConversationTurn(userId, conversation.id, nextMessages);
+  if (!claimed) {
+    return NextResponse.json(
+      {
+        error:
+          "A turn is already running for this conversation -- wait for it to finish, or reload the page to see its progress.",
+      },
+      { status: 409 }
+    );
+  }
 
   try {
     const modelSettings = await getUserModelSettings(userId);
@@ -91,6 +113,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(responseBody);
   } catch (err) {
     console.error("POST /api/chat failed:", err);
+    // The success path clears the lock as part of saveConversationTurn's own
+    // write -- this only runs when that never happened, so the conversation
+    // isn't left permanently "in progress" after a real failure.
+    await clearTurnInProgress(userId, conversation.id).catch(() => {});
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
   }

@@ -4,6 +4,7 @@ import { isValidElement, memo, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MermaidDiagram } from "@/components/MermaidDiagram";
+import { ArchifyDiagram } from "@/components/ArchifyDiagram";
 
 interface DiagramResult {
   svg: string | null;
@@ -118,7 +119,7 @@ export const DocumentPanel = memo(
   }
 
   return (
-    <div className="w-full px-10 py-10 text-bb-text [&>*:first-child]:mt-0">
+    <div className="bb-content w-full px-10 py-10 text-bb-text [&>*:first-child]:mt-0">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -151,18 +152,30 @@ export const DocumentPanel = memo(
               const result = diagramCache.get(source);
               return <MermaidDiagram source={source} svg={result?.svg ?? null} error={result?.error ?? null} />;
             }
+            if (lang === "archify") {
+              try {
+                const { id, title } = JSON.parse(String(children)) as { id: string; title: string };
+                return <ArchifyDiagram id={id} title={title} />;
+              } catch {
+                return (
+                  <div className="mb-4 rounded-md border border-bb-red bg-bb-surface p-4 text-xs text-bb-red">
+                    Malformed archify diagram reference.
+                  </div>
+                );
+              }
+            }
             return (
               <code className="rounded bg-bb-surface px-1.5 py-0.5 font-mono text-[13px] text-bb-text">
                 {children}
               </code>
             );
           },
-          // A rendered Mermaid diagram already brings its own bordered
-          // container -- wrapping it in the plain-code <pre> box too would
-          // double-box it, so pass it through untouched when that's what the
-          // code override above produced.
+          // A rendered Mermaid/Archify diagram already brings its own
+          // bordered container -- wrapping it in the plain-code <pre> box
+          // too would double-box it, so pass it through untouched when
+          // that's what the code override above produced.
           pre: ({ children }) =>
-            isValidElement(children) && children.type === MermaidDiagram ? (
+            isValidElement(children) && (children.type === MermaidDiagram || children.type === ArchifyDiagram) ? (
               <>{children}</>
             ) : (
               <pre className="mb-4 overflow-x-auto rounded-md border border-bb-border bg-bb-surface p-4 font-mono text-[13px] text-bb-text">

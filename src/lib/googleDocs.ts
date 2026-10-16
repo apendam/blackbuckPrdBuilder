@@ -1,5 +1,8 @@
+import fs from "node:fs";
 import { prisma } from "./prisma";
 import { markdownToDocsRequests, MermaidImage } from "./markdownToDocsRequests";
+import { archifyDiagramFilePath, getPngDimensions } from "./archify";
+import { markdownToDocxBuffer } from "./markdownToDocx";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const DOCS_API = "https://docs.googleapis.com/v1/documents";
@@ -115,17 +118,18 @@ async function shareDriveFileForDocsAccess(accessToken: string, fileId: string, 
   }
 }
 
-// Uploads a rendered Mermaid diagram (PNG) to the PM's own Drive so Google
+// Uploads a rendered diagram (PNG bytes) to the PM's own Drive so Google
 // Docs' image-insertion API has something to fetch -- insertInlineImage
 // needs a publicly-reachable URL, not inline image bytes, and Docs can't
 // read a file it doesn't have permission on, so every upload is immediately
 // made readable enough (see shareDriveFileForDocsAccess). Uses the same
 // `drive.file` scope already granted for creating the Doc itself -- that
 // scope covers files this app creates, which is exactly what this is.
-async function uploadImageToDrive(userId: string, pngDataUrl: string, filename: string): Promise<string> {
+// Shared by both diagram sources: Mermaid hands over a client-rendered data
+// URL (decoded to bytes just below), Archify hands over bytes already
+// sitting on disk from its own server-side render.
+async function uploadImageBytesToDrive(userId: string, imageBytes: Buffer, filename: string): Promise<string> {
   const accessToken = await getValidAccessToken(userId);
-  const base64 = pngDataUrl.replace(/^data:image\/png;base64,/, "");
-  const imageBytes = Buffer.from(base64, "base64");
 
   const boundary = `prdbuilder_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const metadata = { name: filename, mimeType: "image/png" };
@@ -175,7 +179,8 @@ async function resolveMermaidImageUrls(
     renderedImages.map(async (img, i): Promise<MermaidImage | null> => {
       if (!img) return null;
       try {
-        const url = await uploadImageToDrive(userId, img.url, `${docTitle} - diagram ${i + 1}.png`);
+        const base64 = img.url.replace(/^data:image\/png;base64,/, "");
+        const url = await uploadImageBytesToDrive(userId, Buffer.from(base64, "base64"), `${docTitle} - diagram ${i + 1}.png`);
         return { ...img, url };
       } catch (err) {
         console.error(`Diagram ${i + 1} upload/share failed, falling back to raw text for it:`, err);
@@ -183,6 +188,105 @@ async function resolveMermaidImageUrls(
       }
     })
   );
+}
+
+// Archify diagram fences carry only a small `{id, title}` pointer -- the
+// actual PNG was already rendered server-side (render_archify_diagram) and
+// sits on disk. This finds every distinct id referenced in the PRD content,
+// reads each PNG's bytes and pixel size directly (no browser/client
+// involvement needed at all, unlike Mermaid), and uploads it to Drive.
+// Same never-throw contract as resolveMermaidImageUrls: a missing file or a
+// failed upload/share just omits that id from the returned map, which
+// markdownToDocsRequests treats as "fall back to a text note for this one."
+const ARCHIFY_FENCE = /```archify\n([\s\S]*?)```/g;
+
+function extractArchifyDiagramIds(markdown: string): string[] {
+  const ids = new Set<string>();
+  for (const match of markdown.matchAll(ARCHIFY_FENCE)) {
+    try {
+      const parsed = JSON.parse(match[1]) as { id?: unknown };
+      if (typeof parsed.id === "string") ids.add(parsed.id);
+    } catch {
+      // Malformed fence -- markdownToDocsRequests already treats this as
+      // unrenderable on its own; nothing to resolve here.
+    }
+  }
+  return Array.from(ids);
+}
+
+async function resolveArchifyImageUrls(
+  userId: string,
+  markdown: string,
+  docTitle: string
+): Promise<Map<string, MermaidImage>> {
+  const ids = extractArchifyDiagramIds(markdown);
+  const resolved = new Map<string, MermaidImage>();
+  await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const filePath = archifyDiagramFilePath(id);
+        const bytes = fs.readFileSync(filePath);
+        const { width, height } = getPngDimensions(bytes);
+        const url = await uploadImageBytesToDrive(userId, bytes, `${docTitle} - ${id}.png`);
+        resolved.set(id, { url, width, height });
+      } catch (err) {
+        console.error(`Archify diagram ${id} upload/share failed, falling back to a text note for it:`, err);
+      }
+    })
+  );
+  return resolved;
+}
+
+// Uploads a .docx to Drive with conversion-to-Google-Doc requested, so the
+// result is a native Google Doc whose images (and tables, headings, lists)
+// came in with the file itself. This is the only image route that works in a
+// Workspace whose admin policy blocks public Drive sharing: the Docs API's
+// insertInlineImage needs a public URL per image, while a converted upload
+// carries the image bytes in its own request body -- nothing is ever shared
+// or fetched by URL. Only needs the `drive.file` scope the app already has
+// (it creates the file), no new consent.
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const GOOGLE_DOC_MIME = "application/vnd.google-apps.document";
+
+// Thrown ONLY when Drive answered with a definitive non-2xx -- i.e. we know no
+// file was created. Anything else (a timeout, a dropped connection, an
+// unreadable response) is ambiguous: Drive may have created the Doc even
+// though we never heard back, so createGoogleDoc must not "retry" through the
+// legacy path in that case or the PM ends up with two copies.
+class DriveImportRejectedError extends GoogleDocsError {}
+
+async function uploadDocxAsGoogleDoc(userId: string, title: string, docx: Buffer): Promise<string> {
+  const accessToken = await getValidAccessToken(userId);
+  const boundary = `prdbuilder_docx_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const metadata = { name: title, mimeType: GOOGLE_DOC_MIME };
+  const body = Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+        `--${boundary}\r\nContent-Type: ${DOCX_MIME}\r\n\r\n`,
+      "utf-8"
+    ),
+    docx,
+    Buffer.from(`\r\n--${boundary}--`, "utf-8"),
+  ]);
+
+  // Bounded, so a hung upload can't tie up the request indefinitely -- a
+  // large PRD with several full-resolution diagrams is a few hundred KB, so
+  // two minutes is generous.
+  const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": `multipart/related; boundary=${boundary}`,
+    },
+    body,
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new DriveImportRejectedError(`Drive rejected the .docx import: ${res.status} ${errBody}`);
+  }
+  const { id } = (await res.json()) as { id: string };
+  return id;
 }
 
 export async function createGoogleDoc(
@@ -197,7 +301,55 @@ export async function createGoogleDoc(
   hadUnrenderedMermaid: boolean;
   imagesEmbedded: number;
   imagesFailed: number;
+  /** True when the higher-fidelity .docx import failed and this Doc came from the legacy text path. */
+  usedFallback: boolean;
+  fallbackReason?: string;
 }> {
+  // Primary path: build a real .docx (diagram images embedded in the file
+  // itself) and let Drive convert it to a native Google Doc. If the file
+  // can't be built, or Drive DEFINITIVELY rejects the import, fall through to
+  // the older Docs-API path below rather than failing the export outright, so
+  // this is never worse than what shipped before it -- but report that it
+  // happened (usedFallback), since the fallback path can't embed diagrams or
+  // make real tables and the PM should know they got the degraded version.
+  let fallbackReason: string | undefined;
+  let docx: Awaited<ReturnType<typeof markdownToDocxBuffer>> | undefined;
+  try {
+    docx = await markdownToDocxBuffer(markdownContent, title, renderedMermaidImages);
+  } catch (err) {
+    fallbackReason = `couldn't build the .docx (${err instanceof Error ? err.message : String(err)})`;
+    console.error("DOCX build failed, falling back to the Docs API text path:", err);
+  }
+
+  if (docx) {
+    try {
+      const documentId = await uploadDocxAsGoogleDoc(userId, title, docx.buffer);
+      return {
+        url: `https://docs.google.com/document/d/${documentId}/edit`,
+        // `hadTables` means "tables that got downgraded to monospace text" --
+        // via .docx they convert to real native tables, so nothing was downgraded.
+        hadTables: false,
+        hadMermaid: docx.diagramsEmbedded + docx.diagramsFallback > 0,
+        hadUnrenderedMermaid: docx.diagramsFallback > 0,
+        imagesEmbedded: docx.diagramsEmbedded,
+        imagesFailed: docx.diagramsFallback,
+        usedFallback: false,
+      };
+    } catch (err) {
+      if (!(err instanceof DriveImportRejectedError)) {
+        // Ambiguous failure (timeout / dropped connection): Drive may already
+        // have created the Doc. Falling back now could leave the PM with two
+        // copies, so surface it instead and let them check before retrying.
+        throw new GoogleDocsError(
+          `The Google Doc upload didn't confirm (${err instanceof Error ? err.message : String(err)}). ` +
+            `It may still have been created -- check your Drive for a Doc titled "${title}" before exporting again, to avoid a duplicate.`
+        );
+      }
+      fallbackReason = err.message;
+      console.error("Drive rejected the DOCX import, falling back to the Docs API text path:", err);
+    }
+  }
+
   const accessToken = await getValidAccessToken(userId);
   const headers = {
     Authorization: `Bearer ${accessToken}`,
@@ -218,13 +370,24 @@ export async function createGoogleDoc(
   // renderedMermaidImages carries each diagram's own already-rendered PNG
   // data URL in its `url` field at this point -- resolveMermaidImageUrls
   // uploads each to Drive and replaces it with the real, link-readable URL
-  // Docs will actually fetch.
-  const driveImages = await resolveMermaidImageUrls(userId, renderedMermaidImages, title);
+  // Docs will actually fetch. Archify diagrams need no client-side input at
+  // all -- their PNGs already exist on disk from the original render_
+  // archify_diagram call, so resolveArchifyImageUrls finds and uploads them
+  // independently, just from the markdown content itself.
+  const [driveImages, archifyImages] = await Promise.all([
+    resolveMermaidImageUrls(userId, renderedMermaidImages, title),
+    resolveArchifyImageUrls(userId, markdownContent, title),
+  ]);
 
-  const { requests, imageRequests, hadTables, hadMermaid, hadUnrenderedMermaid } = markdownToDocsRequests(
-    markdownContent,
-    driveImages
-  );
+  const {
+    requests,
+    imageRequests,
+    hadTables,
+    hadMermaid,
+    hadUnrenderedMermaid,
+    hadArchify,
+    hadUnrenderedArchify,
+  } = markdownToDocsRequests(markdownContent, driveImages, archifyImages);
 
   // Text and formatting first, on its own -- this batch has no
   // insertInlineImage requests in it, so nothing about image availability
@@ -297,14 +460,20 @@ export async function createGoogleDoc(
   return {
     url: `https://docs.google.com/document/d/${documentId}/edit`,
     hadTables,
-    hadMermaid,
+    // Combined across both diagram sources -- the PM-facing signal is just
+    // "did this PRD have rich diagrams" / "did any of them fail to embed as
+    // a real image," not which renderer produced them.
+    hadMermaid: hadMermaid || hadArchify,
     // A diagram whose image insertion failed now has its raw-source-text
-    // fallback written in (see above) -- from the PM's point of view that's
-    // the same "didn't get a real image" outcome as one that was never
-    // rendered client-side, so both count here.
-    hadUnrenderedMermaid: hadUnrenderedMermaid || imagesFailed > 0,
+    // (Mermaid) or plain text note (Archify) fallback written in (see
+    // above) -- from the PM's point of view that's the same "didn't get a
+    // real image" outcome as one that was never rendered in the first
+    // place, so both count here.
+    hadUnrenderedMermaid: hadUnrenderedMermaid || hadUnrenderedArchify || imagesFailed > 0,
     imagesEmbedded,
     imagesFailed,
+    usedFallback: true,
+    fallbackReason,
   };
 }
 

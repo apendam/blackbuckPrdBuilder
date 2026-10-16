@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Aesthetic tokens (shape and type only; the colour palette below is unchanged).
+   Rounder corners across the app and a display face for headings. */
+@theme {
+  --radius-md: 0.75rem;
+  --radius-lg: 1.125rem;
+  --radius-xl: 1.5rem;
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+}
+
 :root {
   --bb-bg: #0a0a0b;
   --bb-panel: #111113;
@@ -40,7 +49,8 @@
 body {
   background: var(--bb-bg);
   color: var(--bb-text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* One typeface for the whole app (reference-site style); system stack is only the fallback. */
+  font-family: var(--font-space-grotesk), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 @keyframes typing-bounce {
@@ -169,4 +179,245 @@ body {
   .prd-print-area {
     position: static;
   }
+}
+
+/* =========================================================================
+   Aesthetic layer, inspired by antidote.email: flat colour fields, big
+   lowercase grotesk headings, pill buttons with a 2px outline and a hard
+   offset shadow, hairline rules. Palette variables above are untouched.
+   ========================================================================= */
+
+
+/* Soft emphasis line used under big headings. */
+.bb-tagline {
+  font-style: italic;
+  letter-spacing: -0.01em;
+}
+
+/* -------------------------------------------------------------------------
+   Splash: shown for the first 3 seconds of every full page load.
+   Visible for 2.6s, fades out over 0.4s, then is removed from interaction.
+   ------------------------------------------------------------------------- */
+#bb-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: 24px;
+  background: var(--bb-bg);
+  animation: bb-splash-out 400ms ease 2600ms forwards;
+}
+
+#bb-splash .bb-splash-card {
+  height: min(58vh, 380px);
+  max-width: 82vw;
+  aspect-ratio: 735 / 785;
+  overflow: hidden;
+  border: 2px solid var(--bb-text);
+  border-radius: 28px;
+  box-shadow: -8px 8px 0 0 var(--bb-red);
+  animation: bb-splash-in 500ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+#bb-splash img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#bb-splash .bb-splash-caption {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: -0.01em;
+  color: var(--bb-text-secondary);
+}
+
+@keyframes bb-splash-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes bb-splash-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #bb-splash .bb-splash-card {
+    animation: none;
+  }
+}
+
+/* Opt-out for tab-style buttons that reuse bg-bb-red for their "selected" state:
+   they should stay flat, without the primary-button outline and hard shadow. */
+button.bb-flat.bg-bb-red,
+button.bb-flat.bg-bb-red:hover:not(:disabled),
+button.bb-flat.bg-bb-red:active:not(:disabled) {
+  border: 0;
+  box-shadow: none;
+  transform: none;
+}
+
+
+/* =========================================================================
+   Unified outline + hard-shadow language (one system for every control).
+   Ink = the light text colour for outlines and focus; the accent red is the
+   offset shadow. Same recipe as the splash card and the sign-in card.
+   All colours are existing palette variables. Unlayered on purpose, so it
+   beats Tailwind utilities without editing every component.
+   ========================================================================= */
+:root {
+  color-scheme: dark; /* native select/date pickers follow the dark palette */
+  --bb-hard: -3px 3px 0 0 var(--bb-red);
+}
+
+/* Neutral outlines get a visible mid-tone instead of the near-invisible token. */
+[class~="border-bb-border"] {
+  border-color: var(--bb-text-tertiary);
+}
+
+/* Boxed things read as drawn with a 2px pen (tags stay 1px, dashed stay dashed). */
+:is(div, button, a, input, select, textarea).border:is(.rounded-md, .rounded-lg, .rounded-full) {
+  border-width: 2px;
+}
+
+/* Pills and red buttons: light outline + hard offset shadow, with a small "press". */
+:is(button, a):is(.rounded-full, .bg-bb-red):not(.bb-flat) {
+  border: 2px solid var(--bb-text);
+  box-shadow: var(--bb-hard);
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+:is(button, a):is(.rounded-full, .bg-bb-red):not(.bb-flat):hover:not(:disabled) {
+  transform: translate(-1px, 1px);
+  box-shadow: -2px 2px 0 0 var(--bb-red);
+}
+:is(button, a):is(.rounded-full, .bg-bb-red):not(.bb-flat):active:not(:disabled) {
+  transform: translate(-3px, 3px);
+  box-shadow: 0 0 0 0 var(--bb-red);
+}
+:is(button, a):is(.rounded-full, .bg-bb-red):not(.bb-flat):disabled {
+  box-shadow: none;
+}
+
+/* Popovers and modals: ink outline, larger offset shadow (amber judge popovers keep their colour). */
+div.bg-bb-panel.border:is(.shadow-lg, .max-w-lg):not([class*="border-bb-amber"]) {
+  border: 2px solid var(--bb-text);
+  border-radius: 1.125rem;
+  box-shadow: -5px 5px 0 0 var(--bb-red);
+}
+
+/* List rows and cards that already declare a red hover border lift the same way. */
+[class~="hover:border-bb-red/50"]:hover {
+  border-color: var(--bb-text);
+  box-shadow: var(--bb-hard);
+}
+
+/* Fields: focus draws the ink outline plus the offset shadow. */
+:is(input, select, textarea).border:focus {
+  border-color: var(--bb-text);
+  box-shadow: var(--bb-hard);
+  outline: none;
+}
+
+/* One focus ring for keyboard users, instead of the browser's blue one. */
+:focus-visible {
+  outline: 2px solid var(--bb-text);
+  outline-offset: 3px;
+}
+
+
+/* -------------------------------------------------------------------------
+   Lowercase UI chrome everywhere (the reference site's signature), while
+   user and PRD content keeps its own casing. Content areas carry .bb-content;
+   a control that shows user content opts out with .normal-case.
+   ------------------------------------------------------------------------- */
+:is(select, option, label, th, summary, a):not(.normal-case):not(.bb-content *),
+.uppercase:not(.bb-content *) {
+  text-transform: lowercase;
+}
+/* Anything that is a button, or a link styled as one, is set in capitals. */
+:is(button, a.rounded-full, a.bg-bb-red):not(.normal-case):not(.bb-content *) {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.uppercase:not(.bb-content *) {
+  letter-spacing: 0.02em;
+}
+:is(input, textarea)::placeholder {
+  text-transform: lowercase;
+}
+
+/* Checkboxes and radios drawn in the same 2px-pen style. */
+input:is([type="checkbox"], [type="radio"]) {
+  appearance: none;
+  flex: none;
+  display: inline-grid;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 2px solid var(--bb-text-tertiary);
+  border-radius: 5px;
+  background: var(--bb-surface);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+input[type="radio"] {
+  border-radius: 9999px;
+}
+input:is([type="checkbox"], [type="radio"]):hover {
+  border-color: var(--bb-text-secondary);
+}
+input[type="checkbox"]:checked {
+  border-color: var(--bb-text);
+  background: var(--bb-red);
+}
+input[type="checkbox"]:checked::after {
+  content: "";
+  width: 8px;
+  height: 4px;
+  border-left: 2px solid #ffffff;
+  border-bottom: 2px solid #ffffff;
+  transform: translateY(-1px) rotate(-45deg);
+}
+input[type="radio"]:checked {
+  border-color: var(--bb-text);
+}
+input[type="radio"]:checked::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--bb-red);
+}
+
+/* Selects: our own chevron with room to breathe, instead of the native one jammed on the edge. */
+select {
+  appearance: none;
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a1a1a8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 12px;
+  cursor: pointer;
+}
+
+/* Menu rows and back-links that behave as buttons but are anchors: opt in to capitals. */
+.bb-caps {
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em;
 }

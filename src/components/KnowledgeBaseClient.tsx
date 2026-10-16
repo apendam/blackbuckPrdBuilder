@@ -50,7 +50,7 @@ export function KnowledgeBaseClient({
     return (
       <button
         onClick={() => setSelectedPath(path)}
-        className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-1.5 text-left text-sm ${
+        className={`bb-flat normal-case flex w-full items-center justify-between gap-2 rounded-md px-3 py-1.5 text-left text-sm ${
           active ? "bg-bb-red text-white" : "text-bb-text-secondary hover:bg-bb-surface hover:text-bb-text"
         }`}
       >
@@ -67,20 +67,20 @@ export function KnowledgeBaseClient({
         <aside className="w-72 shrink-0 overflow-y-auto border-r border-bb-border-subtle bg-bb-panel px-4 py-5">
           <Link
             href="/"
-            className="mb-4 inline-block text-xs text-bb-text-tertiary hover:text-bb-text-secondary"
+            className="bb-caps mb-4 inline-block text-xs text-bb-text-tertiary hover:text-bb-text-secondary"
           >
-            ← Dashboard
+            Dashboard
           </Link>
-          <h1 className="mb-4 text-sm font-bold text-bb-text">Knowledge Base</h1>
+          <h1 className="font-display mb-4 text-3xl font-medium lowercase leading-none tracking-tight text-bb-text">Knowledge Base</h1>
 
-          <div className="mb-1 text-[10px] font-semibold tracking-widest text-bb-text-tertiary">
+          <div className="mb-1 text-[10px] font-semibold lowercase tracking-wide text-bb-text-tertiary">
             SYSTEM MAP
           </div>
           <div className="mb-4 space-y-0.5">
             <NavButton path="system-map/README.md" label="Repo index & flow index" />
           </div>
 
-          <div className="mb-1 text-[10px] font-semibold tracking-widest text-bb-text-tertiary">
+          <div className="mb-1 text-[10px] font-semibold lowercase tracking-wide text-bb-text-tertiary">
             CROSS-REPO FLOWS
           </div>
           <div className="mb-4 space-y-0.5">
@@ -103,7 +103,7 @@ export function KnowledgeBaseClient({
             ))}
           </div>
 
-          <div className="mb-1 text-[10px] font-semibold tracking-widest text-bb-text-tertiary">
+          <div className="mb-1 text-[10px] font-semibold lowercase tracking-wide text-bb-text-tertiary">
             VERTICALS
           </div>
           <div className="space-y-0.5">

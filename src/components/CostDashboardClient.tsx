@@ -23,7 +23,7 @@ function DailySpendChart({ byDay }: { byDay: CostDashboardData["byDay"] }) {
   return (
     <div className="flex h-40 items-end gap-1 overflow-x-auto pb-1">
       {byDay.map((d) => (
-        <div key={d.date} className="flex min-w-[10px] flex-1 flex-col items-center justify-end" title={`${d.date}: ${formatCost(d.cost)}`}>
+        <div key={d.date} className="flex h-full min-w-[10px] flex-1 flex-col items-center justify-end" title={`${d.date}: ${formatCost(d.cost)}`}>
           <div
             className="w-full rounded-t-sm bg-bb-red"
             style={{ height: `${Math.max((d.cost / maxCost) * 100, 2)}%` }}
@@ -54,8 +54,8 @@ export function CostDashboardClient({
         <div className="mx-auto max-w-5xl space-y-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-lg font-bold text-bb-text">Cost dashboard</h1>
-              <p className="text-xs text-bb-text-tertiary">
+              <h1 className="font-display text-3xl font-medium lowercase leading-tight tracking-tight text-bb-text">Cost dashboard</h1>
+              <p className="mt-2 text-xs text-bb-text-tertiary">
                 Token usage and spend across every draft and completed PRD.
               </p>
             </div>
@@ -63,7 +63,7 @@ export function CostDashboardClient({
               href="/"
               className="rounded-full border border-bb-border px-3 py-1.5 text-xs font-semibold text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
             >
-              ← Dashboard
+              Dashboard
             </Link>
           </div>
 
@@ -79,14 +79,14 @@ export function CostDashboardClient({
           </div>
 
           <section>
-            <h2 className="mb-2 text-sm font-bold text-bb-text">Spend by day</h2>
+            <h2 className="font-display mb-2 text-lg font-medium lowercase tracking-tight text-bb-text">Spend by day</h2>
             <div className="rounded-lg border border-bb-border bg-bb-surface p-4">
               <DailySpendChart byDay={byDay} />
             </div>
           </section>
 
           <section>
-            <h2 className="mb-2 text-sm font-bold text-bb-text">By model</h2>
+            <h2 className="font-display mb-2 text-lg font-medium lowercase tracking-tight text-bb-text">By model</h2>
             <div className="overflow-x-auto rounded-lg border border-bb-border">
               <table className="w-full text-left text-sm">
                 <thead>
@@ -108,7 +108,7 @@ export function CostDashboardClient({
                   )}
                   {byModel.map((m) => (
                     <tr key={`${m.provider}:${m.model}`} className="border-b border-bb-border-subtle last:border-0">
-                      <td className="px-3 py-2 capitalize text-bb-text-secondary">{m.provider}</td>
+                      <td className="px-3 py-2 lowercase text-bb-text-secondary">{m.provider}</td>
                       <td className="px-3 py-2 font-mono text-xs text-bb-text">{m.model}</td>
                       <td className="px-3 py-2 text-bb-text-secondary">{m.inputTokens.toLocaleString()}</td>
                       <td className="px-3 py-2 text-bb-text-secondary">{m.outputTokens.toLocaleString()}</td>
@@ -121,7 +121,7 @@ export function CostDashboardClient({
           </section>
 
           <section>
-            <h2 className="mb-1 text-sm font-bold text-bb-text">By vertical</h2>
+            <h2 className="font-display mb-1 text-lg font-medium lowercase tracking-tight text-bb-text">By vertical</h2>
             <p className="mb-2 text-xs text-bb-text-tertiary">
               A PRD scoped to more than one vertical counts its full cost toward each -- rows don&apos;t sum to
               total spend.
@@ -160,7 +160,7 @@ export function CostDashboardClient({
           </section>
 
           <section>
-            <h2 className="mb-2 text-sm font-bold text-bb-text">By PRD</h2>
+            <h2 className="font-display mb-2 text-lg font-medium lowercase tracking-tight text-bb-text">By PRD</h2>
             <div className="overflow-x-auto rounded-lg border border-bb-border">
               <table className="w-full text-left text-sm">
                 <thead>

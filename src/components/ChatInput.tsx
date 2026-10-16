@@ -51,14 +51,19 @@ export function ChatInput({
     const trimmed = value.trim();
     if ((!trimmed && attachments.length === 0) || disabled || sending) return;
     setSending(true);
+    // Clear immediately -- a real turn can run for minutes (a full PRD
+    // draft), and the optimistic user bubble already appears in the
+    // transcript right away, so leaving the same text sitting selected in
+    // the (disabled) box for that whole time reads as "pressing Enter did
+    // nothing." Restore it below if the send actually fails, rather than
+    // holding it hostage until success to avoid losing it on failure.
+    setValue("");
+    setAttachments([]);
     try {
-      // Only clear the box once the send actually succeeds -- clearing
-      // unconditionally meant a failed request (network error, API outage,
-      // out-of-credits) silently threw away whatever the PM had just typed.
       const succeeded = await onSend(trimmed, attachments);
-      if (succeeded) {
-        setValue("");
-        setAttachments([]);
+      if (!succeeded) {
+        setValue(trimmed);
+        setAttachments(attachments);
       }
     } finally {
       setSending(false);
@@ -150,6 +155,12 @@ export function ChatInput({
 
   return (
     <div className="shrink-0 border-t border-bb-border-subtle bg-bb-bg px-6 py-4">
+      {/* The bar itself spans the window (border/background above), but its
+          content stays capped to the same column width as the message list
+          above it, centered -- otherwise the input pill stretches edge-to-edge
+          on a wide desktop display instead of sitting under the conversation
+          it belongs to. */}
+      <div className="mx-auto w-full max-w-3xl">
       {attachments.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2">
           {attachments.map((a) => (
@@ -171,7 +182,7 @@ export function ChatInput({
       )}
       {attachError && <div className="mb-2 text-xs text-bb-red">{attachError}</div>}
 
-      <div className="flex items-end gap-3 rounded-full border border-bb-border bg-bb-surface px-4 py-2">
+      <div className="flex items-center gap-3 rounded-full border border-bb-border bg-bb-surface py-2 pl-4 pr-2">
         <input
           ref={fileInputRef}
           type="file"
@@ -183,7 +194,7 @@ export function ChatInput({
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="shrink-0 text-bb-text-tertiary hover:text-bb-text-secondary disabled:opacity-40"
+          className="flex shrink-0 items-center text-bb-text-tertiary hover:text-bb-text-secondary disabled:opacity-40"
           aria-label="Attach file"
           disabled={disabled || attaching}
         >
@@ -206,7 +217,7 @@ export function ChatInput({
           rows={1}
           placeholder="Type your answer..."
           style={{ height: MIN_TEXTAREA_HEIGHT, maxHeight: MAX_TEXTAREA_HEIGHT }}
-          className="flex-1 resize-none overflow-y-auto bg-transparent py-1.5 text-sm text-bb-text placeholder:text-bb-text-tertiary focus:outline-none disabled:opacity-50"
+          className="flex-1 resize-none overflow-y-auto bg-transparent py-2.5 text-sm leading-5 text-bb-text placeholder:text-bb-text-tertiary focus:outline-none disabled:opacity-50"
         />
         <button
           type="button"
@@ -214,11 +225,12 @@ export function ChatInput({
           disabled={disabled || attaching || (!value.trim() && attachments.length === 0)}
           className="flex shrink-0 items-center gap-1.5 rounded-full bg-bb-red px-4 py-2 text-xs font-semibold text-white transition hover:bg-bb-red-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {attaching ? "..." : "SEND"}
+          {attaching ? "..." : "Send"}
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
             <path d="M5 12h14M13 6l6 6-6 6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
+      </div>
       </div>
     </div>
   );

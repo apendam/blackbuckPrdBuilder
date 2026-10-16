@@ -3,7 +3,7 @@ import { PHASES, PHASE_LABELS, PhaseState } from "@/lib/types";
 export function PhaseStepper({ phaseState }: { phaseState: PhaseState }) {
   return (
     <aside className="w-64 shrink-0 border-r border-bb-border-subtle bg-bb-panel px-5 py-6 overflow-y-auto">
-      <div className="mb-5 text-xs font-semibold tracking-widest text-bb-text-tertiary">
+      <div className="mb-5 text-xs font-semibold lowercase tracking-wide text-bb-text-tertiary">
         PRD PROGRESS
       </div>
       <ol className="relative">
@@ -39,7 +39,7 @@ export function PhaseStepper({ phaseState }: { phaseState: PhaseState }) {
                 ) : null}
               </span>
               <span
-                className={`text-sm leading-[22px] ${
+                className={`text-sm lowercase leading-[22px] ${
                   isActive
                     ? "font-semibold text-bb-text"
                     : isCompleted

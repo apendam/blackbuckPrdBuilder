@@ -159,6 +159,9 @@ export function PrdViewerClient({
   const [hasPendingComments, setHasPendingComments] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [actionError, setActionError] = useState<FriendlyError | null>(null);
+  // Set when a Google Doc export finishes -- a persistent, clickable notice,
+  // because the auto-open below is unreliable (see handleExportGoogleDoc).
+  const [exportedDocUrl, setExportedDocUrl] = useState<string | null>(null);
   // A conversation isn't "finished" just because a draft file exists --
   // see runChatTurn's auto-save (claude.ts), which now saves as soon as a
   // complete draft is produced, well before the PM finalizes anything. Only
@@ -424,6 +427,7 @@ export function PrdViewerClient({
   async function handleExportGoogleDoc() {
     setExportingGoogleDoc(true);
     setActionError(null);
+    setExportedDocUrl(null);
     try {
       // Render every diagram to a real PNG in the browser first -- this is
       // the one piece the server genuinely cannot do itself (no DOM to
@@ -438,11 +442,30 @@ export function PrdViewerClient({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Request failed");
       router.refresh();
-      // The only other feedback here is a quiet link appearing in the
-      // header -- easy to miss entirely, especially since this action takes
-      // several seconds. Opening the finished Doc directly is the
-      // unambiguous "yes, it worked" signal, matching how Export PDF's
-      // print dialog appears immediately rather than silently.
+      // The export itself worked, but if it came out degraded the PM should
+      // hear that here -- otherwise the only sign is discovering missing
+      // diagrams in the Doc later. (The banner is the app's existing
+      // dismissible notice bar; it's shown red, which suits "look at this".)
+      if (data.usedFallback) {
+        setActionError({
+          title: "Exported with limitations",
+          detail:
+            "The full-fidelity import didn't go through, so this Doc is the simpler version -- diagrams show as text notes and tables as plain text. Try exporting again." +
+            (data.fallbackReason ? ` (${String(data.fallbackReason).slice(0, 200)})` : ""),
+        });
+      } else if (typeof data.imagesFailed === "number" && data.imagesFailed > 0) {
+        setActionError({
+          title: "Exported, but some diagrams are missing",
+          detail: `${data.imagesFailed} diagram${data.imagesFailed === 1 ? "" : "s"} couldn't be embedded and appear as a text note in the Doc.`,
+        });
+      }
+      // Always leave a persistent, clickable banner: the export takes many
+      // seconds (browser rendering + upload), so by the time it finishes the
+      // click that started it no longer counts as a "user gesture" and
+      // browsers -- Brave especially -- silently block the window.open below.
+      // Without the banner, a blocked popup looks exactly like nothing
+      // happening. The auto-open stays as a best-effort convenience.
+      setExportedDocUrl(data.url);
       window.open(data.url, "_blank", "noopener,noreferrer");
     } catch (err) {
       setActionError(classifyApiError(err instanceof Error ? err.message : "Request failed"));
@@ -471,13 +494,13 @@ export function PrdViewerClient({
       <div className="print:hidden">
         <AppHeader userName={userName} userEmail={userEmail} signOutAction={signOutAction} />
       </div>
-      <div className="flex items-center justify-between border-b border-bb-border-subtle bg-bb-panel px-8 py-4 print:hidden">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-lg font-bold text-bb-text">
+      <div className="flex items-center justify-between gap-6 border-b border-bb-border-subtle bg-bb-panel px-8 py-4 print:hidden">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="font-display text-2xl font-medium tracking-tight text-bb-text">
               {conversation.title || "(untitled PRD)"}
             </h1>
-            <span className="rounded-full bg-bb-surface px-2 py-0.5 text-[10px] text-bb-text-tertiary">
+            <span className="shrink-0 rounded-full border border-bb-border px-2 py-0.5 text-[10px] text-bb-text-tertiary">
               v{conversation.version}
             </span>
             {conversation.status === "archived" && (
@@ -488,7 +511,7 @@ export function PrdViewerClient({
             {conversationUsage.totalTokens > 0 && (
               <span
                 title="Total spend across this PRD's whole conversation, from Phase 1 Objective onward"
-                className="rounded-full border border-bb-border-subtle px-2 py-0.5 text-[10px] text-bb-text-tertiary"
+                className="shrink-0 whitespace-nowrap rounded-full border border-bb-border-subtle px-2 py-0.5 text-[10px] text-bb-text-tertiary"
               >
                 {formatTokenCount(conversationUsage.totalTokens)} tokens · {formatCost(conversationUsage.totalCost)}
               </span>
@@ -512,12 +535,12 @@ export function PrdViewerClient({
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
           <Link
             href="/"
             className="rounded-full border border-bb-border px-3 py-1.5 text-xs font-semibold text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
           >
-            ← Dashboard
+            Dashboard
           </Link>
           <div className="relative" ref={downloadMenuRef}>
             <button
@@ -537,7 +560,7 @@ export function PrdViewerClient({
               </svg>
             </button>
             {downloadMenuOpen && (
-              <div className="absolute right-0 top-10 z-20 w-40 rounded-md border border-bb-border bg-bb-panel p-1 shadow-lg">
+              <div className="absolute right-0 top-10 z-20 w-max min-w-40 whitespace-nowrap rounded-md border border-bb-border bg-bb-panel p-1 shadow-lg">
                 <button
                   onClick={() => {
                     downloadMarkdown();
@@ -545,7 +568,7 @@ export function PrdViewerClient({
                   }}
                   className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-bb-text hover:bg-bb-surface"
                 >
-                  Download .md
+                  Markdown
                 </button>
                 <button
                   onClick={() => {
@@ -554,7 +577,7 @@ export function PrdViewerClient({
                   }}
                   className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-bb-text hover:bg-bb-surface"
                 >
-                  Export PDF
+                  PDF
                 </button>
                 <button
                   onClick={() => {
@@ -579,22 +602,23 @@ export function PrdViewerClient({
                   {exportingGoogleDoc
                     ? "Exporting…"
                     : conversation.googleDocUrl
-                      ? "Re-export to Google Doc"
-                      : "Export to Google Doc"}
+                      ? "Doc"
+                      : "Doc"}
                 </button>
               </div>
             )}
           </div>
           <Link
             href={`/chat/${conversation.id}`}
-            title="Open the full chat for this PRD -- free-form messages and file attachments included -- to keep talking with the agent. Changes made here land on THIS same version, not a new one; use 'Revise PRD' instead if you want to branch off a new version."
-            className="rounded-full border border-bb-border px-3 py-1.5 text-xs font-semibold text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
+            title="Open the full chat for this PRD -- free-form messages and file attachments included -- to keep talking with the agent. Changes made here land on THIS same version, not a new one; use 'Revise' instead if you want to branch off a new version."
+            className="inline-flex items-center gap-1.5 rounded-full border border-bb-border px-3 py-1.5 text-xs font-semibold text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
           >
-            🛠️ Modify PRD
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4zM13.5 6.5l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            Modify
           </Link>
           {isDraft ? (
             // One dropdown, not two competing buttons -- "Redo PRD" (keep
-            // iterating, opens the comment panel) and "Finalize PRD" (the
+            // iterating, opens the comment panel) and "Finalize" (the
             // rare, deliberate, harder-to-undo one -- create_google_doc +
             // mark complete, no more judge calls) both live under the same
             // trigger so neither reads as more the "default" action than
@@ -604,13 +628,13 @@ export function PrdViewerClient({
                 onClick={() => setReviseMenuOpen((v) => !v)}
                 className="flex items-center gap-1 rounded-full bg-bb-red px-3 py-1.5 text-xs font-semibold text-white hover:bg-bb-red-hover"
               >
-                Revise PRD
+                Revise
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
                   <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
               {reviseMenuOpen && (
-                <div className="absolute left-0 top-10 z-20 w-52 rounded-md border border-bb-border bg-bb-panel p-1 shadow-lg">
+                <div className="absolute left-0 top-10 z-20 w-max min-w-52 whitespace-nowrap rounded-md border border-bb-border bg-bb-panel p-1 shadow-lg">
                   <button
                     onClick={() => {
                       openReviseWithComments();
@@ -619,7 +643,7 @@ export function PrdViewerClient({
                     title="Point-fix specific parts of this draft via inline comments, or address open verification findings"
                     className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-bb-text hover:bg-bb-surface"
                   >
-                    Redo PRD
+                    Redo
                   </button>
                   <button
                     onClick={() => {
@@ -630,7 +654,7 @@ export function PrdViewerClient({
                     title="Create the Google Doc and mark this PRD complete, with no further judge checks -- this is the final step, not a way to keep iterating."
                     className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-bb-text hover:bg-bb-surface disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {finalizing ? "Finalizing…" : "✅ Finalize PRD"}
+                    {finalizing ? "Finalizing…" : "Finalize"}
                   </button>
                 </div>
               )}
@@ -641,24 +665,25 @@ export function PrdViewerClient({
               title="Point-fix specific parts of this PRD via inline comments -- keeps the current structure, revises only what you flag."
               className="rounded-full bg-bb-red px-3 py-1.5 text-xs font-semibold text-white hover:bg-bb-red-hover"
             >
-              Revise PRD
+              Revise
             </button>
           )}
           <button
             data-feedback-toggle
             onClick={() => setFeedbackPanelOpen((v) => !v)}
             title="Comments and verification findings on this PRD"
-            className="rounded-full border border-bb-border px-3 py-1.5 text-xs font-semibold text-bb-text-secondary hover:border-bb-amber hover:text-bb-text"
+            className="inline-flex items-center gap-1.5 rounded-full border border-bb-border px-3 py-1.5 text-xs font-semibold text-bb-text-secondary hover:border-bb-amber hover:text-bb-text"
           >
-            💬 Feedback{feedbackCount > 0 ? ` (${feedbackCount})` : ""}
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>
+            Feedback{feedbackCount > 0 ? ` (${feedbackCount})` : ""}
           </button>
           <button
             onClick={revise}
             disabled={revising}
-            title="Starts over from the skeleton -- does not carry forward inline comments below. For point-fixes, use 'Revise PRD' instead."
+            title="Starts over from the skeleton -- does not carry forward inline comments below. For point-fixes, use 'Revise' instead."
             className="rounded-full border border-bb-border px-3 py-1.5 text-xs font-semibold text-bb-text-secondary hover:border-bb-red hover:text-bb-text disabled:opacity-50"
           >
-            {revising ? "Starting redo…" : "Redo Skeleton"}
+            {revising ? "Restarting…" : "Restart"}
           </button>
           {conversation.status !== "archived" && (
             <button
@@ -687,7 +712,7 @@ export function PrdViewerClient({
             <button
               key={m}
               onClick={() => setMode(m)}
-              className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${
+              className={`bb-flat rounded-full px-3 py-1 text-xs font-semibold lowercase ${
                 mode === m ? "bg-bb-red text-white" : "text-bb-text-tertiary hover:text-bb-text-secondary"
               }`}
             >
@@ -724,6 +749,31 @@ export function PrdViewerClient({
         )}
       </div>
 
+      {exportingGoogleDoc && (
+        <div className="border-b border-bb-border bg-bb-surface px-8 py-2 text-sm text-bb-text-secondary print:hidden">
+          Exporting to Google Docs… this takes 15–30 seconds while the diagrams are drawn and uploaded.
+        </div>
+      )}
+      {exportedDocUrl && (
+        <div className="flex items-center gap-3 border-b border-bb-green/50 bg-bb-surface px-8 py-2 text-sm text-bb-text print:hidden">
+          <span className="font-semibold text-bb-green">✓ Exported to Google Docs.</span>
+          <a
+            href={exportedDocUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-bb-red underline underline-offset-2"
+          >
+            Open Google Doc ↗
+          </a>
+          <button
+            onClick={() => setExportedDocUrl(null)}
+            className="ml-auto text-bb-text-tertiary hover:text-bb-text"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {actionError && (
         <div className="border-b border-bb-red bg-bb-red-dim px-8 py-2 text-sm text-bb-text print:hidden">
           <span className="font-semibold">{actionError.title}: </span>
@@ -757,7 +807,7 @@ export function PrdViewerClient({
         )}
 
         {mode === "transcript" && (
-          <div className="mx-auto max-w-2xl space-y-4 px-8 py-8 print:hidden">
+          <div className="mx-auto max-w-4xl space-y-4 px-8 py-8 print:hidden">
             {conversation.messages.map((m, i) => (
               <ChatMessageBubble key={i} message={m} />
             ))}
@@ -765,8 +815,8 @@ export function PrdViewerClient({
         )}
 
         {mode === "activity" && (
-          <div className="mx-auto max-w-2xl px-8 py-8 print:hidden">
-            <h2 className="mb-4 text-sm font-bold text-bb-text">Phase activity log</h2>
+          <div className="mx-auto max-w-4xl px-8 py-8 print:hidden">
+            <h2 className="font-display mb-4 text-lg font-medium lowercase tracking-tight text-bb-text">Phase activity log</h2>
             {conversation.phaseLog.length === 0 && (
               <p className="text-sm text-bb-text-tertiary">No phase transitions recorded yet.</p>
             )}
@@ -787,7 +837,7 @@ export function PrdViewerClient({
             {conversation.googleDocUrl && (
               <div className="mt-8">
                 <div className="mb-2 flex items-center justify-between">
-                  <h2 className="text-sm font-bold text-bb-text">Google Doc comments</h2>
+                  <h2 className="font-display text-lg font-medium lowercase tracking-tight text-bb-text">Google Doc comments</h2>
                   <button
                     onClick={loadComments}
                     className="text-xs text-bb-text-tertiary underline decoration-dotted hover:text-bb-text-secondary"
@@ -831,9 +881,9 @@ export function PrdViewerClient({
         )}
 
         {mode === "notes" && (
-          <div className="mx-auto max-w-2xl px-8 py-8 print:hidden">
+          <div className="mx-auto max-w-4xl px-8 py-8 print:hidden">
             <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-bold text-bb-text">Your notes</h2>
+              <h2 className="font-display text-lg font-medium lowercase tracking-tight text-bb-text">Your notes</h2>
               <span className="text-xs text-bb-text-tertiary">
                 {notesSaved ? "saved" : "saving…"}
               </span>
@@ -852,7 +902,7 @@ export function PrdViewerClient({
         )}
 
         {mode === "diff" && (
-          <div className="mx-auto max-w-3xl px-8 py-8 print:hidden">
+          <div className="mx-auto max-w-6xl px-8 py-8 print:hidden">
             <div className="mb-3 text-xs text-bb-text-tertiary">
               Comparing this version against v
               {versions.find((v) => v.id === diffAgainst)?.version ?? "?"} (red = removed, green =

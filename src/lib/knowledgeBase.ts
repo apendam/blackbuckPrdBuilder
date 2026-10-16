@@ -8,14 +8,9 @@ import { KNOWN_REPOS } from "./repoList";
 // Once claude/prd-builder-pass1-pass2 is pushed and merged, this should
 // track wherever the skill repo is checked out instead of a fixed worktree path.
 const WORKSPACE_ROOT = path.join(os.homedir(), "blackbuck-workspace");
-const REFERENCES_ROOT = path.join(
-  WORKSPACE_ROOT,
-  ".prd-builder-worktree/.claude/skills/prd-builder/references"
-);
-const SKILL_MD_PATH = path.join(
-  WORKSPACE_ROOT,
-  ".prd-builder-worktree/.claude/skills/prd-builder/SKILL.md"
-);
+const SKILL_ROOT = path.join(WORKSPACE_ROOT, ".prd-builder-worktree/.claude/skills/prd-builder");
+const REFERENCES_ROOT = path.join(SKILL_ROOT, "references");
+const SKILL_MD_PATH = path.join(SKILL_ROOT, "SKILL.md");
 
 export { KNOWN_REPOS };
 export { WORKSPACE_ROOT };
@@ -31,6 +26,35 @@ function resolveWithinRoot(root: string, relativePath: string): string {
 
 export function readSkillMd(): string {
   return fs.readFileSync(SKILL_MD_PATH, "utf-8");
+}
+
+// Writes to the skill's OWN methodology files -- SKILL.md itself, or anything
+// under references/ -- never Blackbuck's actual product repos (see
+// KNOWN_REPOS/readRepoFile, which stay strictly read-only). This is real,
+// live-editing-the-methodology-for-every-future-PRD power, so it's kept to
+// exactly this one directory (sandboxed the same way every other read here
+// is) and to `.md` files only, on the theory that anything in this skill
+// worth changing via chat is prose, not code. The system prompt is what
+// actually enforces that this only ever gets called after the PM has
+// explicitly confirmed a proposed change in a PRIOR turn -- this function
+// itself has no way to know that, so never relax the gating on the prompt
+// side without a real reason. Every change lands in a normal git-tracked
+// working tree, so a bad edit is a `git diff`/`git checkout` away from being
+// undone -- that's the actual safety net, not this function.
+export function writeSkillFile(relativePath: string, content: string): string {
+  const cleaned = relativePath.replace(/^\.?\/?/, "");
+  let full: string;
+  try {
+    full = resolveWithinRoot(SKILL_ROOT, cleaned);
+  } catch {
+    return `ERROR: path escapes the skill directory: ${relativePath}`;
+  }
+  if (!full.endsWith(".md")) {
+    return `ERROR: refusing to write a non-Markdown file: ${relativePath}. This tool is for the skill's own prose (SKILL.md, references/**/*.md) only.`;
+  }
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  fs.writeFileSync(full, content, "utf-8");
+  return `Updated ${relativePath}`;
 }
 
 /** relativePath is rooted at references/, e.g. "system-map/README.md" or "verticals/toll.md" */

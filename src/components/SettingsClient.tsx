@@ -186,10 +186,10 @@ export function SettingsClient({
   return (
     <div className="min-h-screen bg-bb-bg px-8 py-8">
       <div className="mx-auto max-w-4xl">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-bb-text">Model Settings</h1>
-            <p className="mt-1 text-sm text-bb-text-secondary">
+        <div className="mb-8 flex items-center justify-between gap-8">
+          <div className="min-w-0">
+            <h1 className="font-display text-4xl font-medium lowercase leading-tight tracking-tight text-bb-text">Model Settings</h1>
+            <p className="mt-2 text-sm text-bb-text-secondary">
               Signed in as {userEmail}. Pick which provider, model, and (for Anthropic) effort tier
               handles each phase of the PRD-writing process.
             </p>
@@ -198,7 +198,7 @@ export function SettingsClient({
             href="/"
             className="shrink-0 whitespace-nowrap rounded-full border border-bb-border px-4 py-2 text-xs font-semibold text-bb-text-secondary hover:border-bb-red hover:text-bb-text"
           >
-            ← Back to chat
+            Back
           </Link>
         </div>
 
@@ -214,8 +214,8 @@ export function SettingsClient({
                 } bg-bb-panel`}
               >
                 <div className="min-w-[140px] shrink-0">
-                  <div className="text-sm font-semibold text-bb-text">{PHASE_LABELS[phase]}</div>
-                  <div className="text-xs text-bb-text-tertiary">Phase {i + 1}</div>
+                  <div className="text-sm font-semibold lowercase text-bb-text">{PHASE_LABELS[phase]}</div>
+                  <div className="text-xs lowercase text-bb-text-tertiary">Phase {i + 1}</div>
                 </div>
 
                 <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
