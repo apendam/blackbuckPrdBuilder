@@ -34,6 +34,12 @@ Don't reach for a table just because a list has two attributes per item — if a
 
 Every PRD section that involves UI should link out to Figma rather than describing the screen in prose or trying to embed an image. Label it plainly: `Design:` or `Design Link:` followed by the link. The PRD's job is to narrate logic and flow; Figma is the source of truth for what things look like.
 
+How designs appear in a generated PRD (produced by the `figma-designer` skill in phase 8b):
+- **Section 9** holds the full handoff block: the Figma file link, a table with one row per screen (PRD flow, screen, app, frame link, states shown, status), the design assumptions, and the open design gaps. Frame links are real hyperlinks to the specific frame, not just the file.
+- **Section 7** gets a single `Design: <frame link(s)>` line under each sub-flow that has designed screens. Do not restate the screen layout in prose underneath it.
+- Frame states the flow describes but the design leaves out are listed in Open Questions, not silently skipped.
+- No screenshots in the PRD, in the Google Doc or in the Markdown copy.
+
 ## Flowcharts: Mermaid, used deliberately
 
 Add a Mermaid flowchart wherever a flow has enough branches that nested bullets would get hard to scan, or wherever a sequence spans multiple systems/actors (e.g. app → backend → external vendor → webhook back). Keep node labels short; put the detail in the nested-bullet walkthrough beneath the diagram rather than cramming it into node text.
