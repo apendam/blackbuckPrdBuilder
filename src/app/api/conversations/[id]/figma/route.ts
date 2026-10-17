@@ -12,6 +12,7 @@ import {
   resetFigmaJob,
   startBrief,
   startBuild,
+  startRefine,
 } from "@/lib/figmaDesign";
 
 async function load(params: Promise<{ id: string }>) {
@@ -64,7 +65,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await load(params);
   if ("error" in ctx) return ctx.error;
-  const body = (await req.json().catch(() => ({}))) as { action?: string; corrections?: string };
+  const body = (await req.json().catch(() => ({}))) as { action?: string; corrections?: string; request?: string };
 
   try {
     if (body.action === "reset") {
@@ -87,6 +88,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     if (body.action === "brief") {
       return NextResponse.json({ job: startBrief(ctx.id, prd) });
+    }
+    if (body.action === "refine") {
+      return NextResponse.json({ job: startRefine(ctx.id, prd, body.request ?? "") });
     }
     if (body.action === "build") {
       return NextResponse.json({ job: startBuild(ctx.id, prd, body.corrections ?? "") });

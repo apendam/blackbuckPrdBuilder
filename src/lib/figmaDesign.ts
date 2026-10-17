@@ -205,6 +205,39 @@ ${corrections ? `\n<pm_corrections>\n${corrections}\n</pm_corrections>\n` : ""}
 ${prd}
 </prd>`;
 
+const REFINE_PROMPT = (prd: string, brief: string, html: string, handoff: string, request: string, drift: string) => `Use the figma-designer skill (.claude/skills/figma-designer/SKILL.md): its context files and hard rules. Figma is NOT available; the designs are an HTML mockup.
+
+An HTML mockup for this PRD already exists (below). The PM wants it changed:
+
+<pm_request>
+${request}
+</pm_request>
+
+Do exactly that. KEEP every existing screen, state, flow tab and assumption that the request doesn't touch, word for word where you can; add or change only what is asked, in the same visual language and file structure (one self-contained HTML document, inline <style> and <script> only, no external resources or network, inline SVG icons, labelled frames, state toggles, NEW/CHANGED/ASSUMPTION/SERVER-DRIVEN/DRIFT badges).
+For any new screen, ground it in the skill's code-derived context (read the relevant context files by heading, e.g. web-and-ops-surfaces.md for ops and support portals, plus the app/domain file) and check the live code (see code_freshness). Web and ops surfaces use their own look, not the Boss or BB Pro mobile look: take it from the context and the portal's code. Do not invent fields, statuses, reason codes or limits; use only what the PRD and code give, and mark anything else ASSUMPTION.
+${FRESHNESS(drift)}
+Your final message must be EXACTLY two parts and nothing else:
+1. The COMPLETE updated HTML document in a single \`\`\`html fenced block.
+2. After the fence, the updated "Design handoff block" (Markdown, screen names and plain-language states only, no frame links, assumptions and gaps as short bullets), covering all screens including the new ones, ending with a "Grounded in:" line naming the context files you read.
+
+<current_handoff>
+${handoff}
+</current_handoff>
+
+<current_mockup>
+\`\`\`html
+${html}
+\`\`\`
+</current_mockup>
+
+<design_brief>
+${brief}
+</design_brief>
+
+<prd>
+${prd}
+</prd>`;
+
 function pushProgress(job: FigmaJob, line: string): void {
   if (job.progress[job.progress.length - 1] === line) return;
   job.progress = [...job.progress, line].slice(-MAX_PROGRESS);
@@ -300,6 +333,54 @@ export function startBuild(id: string, prd: string, corrections: string): FigmaJ
     j.handoff = out.slice(fence!.index + fence![0].length).trim();
     j.status = "done";
   }, false);
+}
+
+// Changes an existing mockup: more screens, different states, fixes.
+export function startRefine(id: string, prd: string, request: string): FigmaJob {
+  if (running.has(id)) throw new Error("A design run is already in progress for this PRD.");
+  const prev = readFigmaJob(id);
+  const html = readMockup(id);
+  if (!prev?.brief || !html) throw new Error("Build the mockup first.");
+  if (!request.trim()) throw new Error("Say what to add or change.");
+  const now = new Date().toISOString();
+  const job: FigmaJob = {
+    status: "building",
+    startedAt: now,
+    updatedAt: now,
+    brief: prev.brief,
+    handoff: prev.handoff,
+    hasMockup: true,
+    repos: prev.repos,
+    progress: [],
+  };
+  return start(
+    id,
+    job,
+    (drift) => REFINE_PROMPT(prd, prev.brief!, html, prev.handoff ?? "", request.trim(), drift),
+    (j, out) => {
+      const fence = /```html\s*\n([\s\S]*?)\n```/i.exec(out);
+      const next = fence?.[1].trim();
+      if (!next || !/<html[\s>]|<!doctype/i.test(next)) {
+        // Keep the previous mockup; surface what the run said instead.
+        j.status = "error";
+        j.error = `The run finished without an updated mockup (the previous one is unchanged). Last message: ${out.slice(0, 600)}`;
+        return;
+      }
+      // Never overwrite a good mockup with a much smaller one -- that is a
+      // truncated or dropped-screens result, not a refinement.
+      if (next.length < html.length * 0.6) {
+        j.status = "error";
+        j.error = "The updated mockup came back much smaller than the original, so it looks like screens were dropped. The previous mockup is unchanged. Try again.";
+        return;
+      }
+      fs.writeFileSync(mockupPath(id), next);
+      const rest = out.slice(fence!.index + fence![0].length).trim();
+      if (rest) j.handoff = rest;
+      j.appliedToPrd = false;
+      j.status = "done";
+    },
+    false
+  );
 }
 
 function mockupPath(id: string): string {

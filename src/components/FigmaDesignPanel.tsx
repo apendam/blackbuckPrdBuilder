@@ -49,6 +49,7 @@ export function FigmaDesignPanel({ conversationId, onApplied }: { conversationId
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [corrections, setCorrections] = useState("");
+  const [request, setRequest] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const url = `/api/conversations/${conversationId}/figma`;
   const running = job?.status === "briefing" || job?.status === "building";
@@ -85,20 +86,21 @@ export function FigmaDesignPanel({ conversationId, onApplied }: { conversationId
     return () => clearInterval(t);
   }, [running, refresh]);
 
-  async function act(action: "brief" | "build" | "apply" | "reset") {
+  async function act(action: "brief" | "build" | "refine" | "apply" | "reset") {
     setBusy(true);
     setError(null);
     try {
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, corrections }),
+        body: JSON.stringify({ action, corrections, request }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Request failed");
       setJob(data.job);
       if (action === "apply") onApplied();
       if (action === "reset") setCorrections("");
+      if (action === "refine") setRequest("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
     } finally {
@@ -218,6 +220,23 @@ export function FigmaDesignPanel({ conversationId, onApplied }: { conversationId
           <div className="mb-4 rounded-lg border border-bb-border bg-bb-panel p-5">
             <Markdown text={job.handoff ?? ""} />
           </div>
+          {job.hasMockup && (
+            <div className="mb-4">
+              <label className="mb-1 block text-xs text-bb-text-tertiary">
+                Add screens or change something: everything else stays as it is
+              </label>
+              <textarea
+                value={request}
+                onChange={(e) => setRequest(e.target.value)}
+                rows={3}
+                placeholder="e.g. add the support portal view from PRD 7.6"
+                className="mb-2 w-full rounded-md border border-bb-border bg-bb-surface p-3 text-sm text-bb-text placeholder:text-bb-text-tertiary focus:border-bb-red focus:outline-none"
+              />
+              <button onClick={() => act("refine")} disabled={busy || !available || !request.trim()} className={btn}>
+                Update mockup
+              </button>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             {job.hasMockup && (
               <>
