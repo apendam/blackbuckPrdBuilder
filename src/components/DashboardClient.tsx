@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { RefreshReposModal } from "@/components/RefreshReposModal";
 import { ActivityStats } from "@/components/ActivityStats";
+import { PrdTable } from "@/components/PrdTable";
 import type { ConversationView } from "@/lib/conversations";
 import { PHASE_LABELS, VERTICALS } from "@/lib/types";
 
@@ -236,88 +237,57 @@ export function DashboardClient({
           </div>
         )}
 
-        <div className="space-y-2">
-          {rows.map((c) => (
-            <div
-              key={c.id}
-              className="flex items-center justify-between gap-3 rounded-lg border border-bb-border bg-bb-panel px-4 py-3 hover:border-bb-red/50"
-            >
-              <button
-                className="flex-1 text-left normal-case"
-                onClick={() =>
-                  router.push(tab === "completed" || tab === "archived" ? `/prd/${c.id}` : `/chat/${c.id}`)
-                }
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-bb-text">
-                    {c.title || "(untitled draft)"}
-                  </span>
-                  {c.version > 1 && (
-                    <span className="rounded-full border border-bb-border px-2 py-0.5 text-[10px] text-bb-text-tertiary">
-                      v{c.version}
-                    </span>
-                  )}
-                  {c.verticals.map((v) => (
-                    <span
-                      key={v}
-                      className="rounded-full border border-bb-border px-2 py-0.5 text-[10px] text-bb-text-tertiary"
-                    >
-                      {v}
-                    </span>
-                  ))}
-                </div>
-                <div className="mt-0.5 text-xs lowercase text-bb-text-tertiary">
-                  {tab === "drafts" ? PHASE_LABELS[c.currentPhase] : "Completed"} · updated{" "}
-                  {timeAgo(c.updatedAt)}
-                </div>
-              </button>
-
-              <div className="flex shrink-0 items-center gap-2">
-                {tab === "drafts" && (
+        <PrdTable
+          rows={rows}
+          tab={tab}
+          author={userName || userEmail || "Unknown"}
+          onOpen={(c) => router.push(tab === "completed" || tab === "archived" ? `/prd/${c.id}` : `/chat/${c.id}`)}
+          renderActions={(c) => (
+            <>
+              {tab === "drafts" && (
+                <button
+                  onClick={() => deleteDraft(c.id)}
+                  className="rounded-md px-2 py-1 text-xs text-bb-text-tertiary hover:bg-bb-red-dim hover:text-bb-text"
+                >
+                  Delete
+                </button>
+              )}
+              {tab === "completed" && (
+                <>
                   <button
-                    onClick={() => deleteDraft(c.id)}
+                    onClick={() => useAsTemplate(c.id)}
+                    disabled={creating}
+                    className="rounded-md px-2 py-1 text-xs text-bb-text-tertiary hover:bg-bb-surface hover:text-bb-text"
+                  >
+                    Template
+                  </button>
+                  <button
+                    onClick={() => archive(c.id, "completed")}
+                    className="rounded-md px-2 py-1 text-xs text-bb-text-tertiary hover:bg-bb-surface hover:text-bb-text"
+                  >
+                    Archive
+                  </button>
+                </>
+              )}
+              {tab === "archived" && (
+                <>
+                  <button
+                    onClick={() => unarchive(c.id)}
+                    className="rounded-md px-2 py-1 text-xs text-bb-text-tertiary hover:bg-bb-surface hover:text-bb-text"
+                  >
+                    Unarchive
+                  </button>
+                  <button
+                    onClick={() => permanentlyDelete(c.id)}
                     className="rounded-md px-2 py-1 text-xs text-bb-text-tertiary hover:bg-bb-red-dim hover:text-bb-text"
                   >
-                    Delete
+                    Erase
                   </button>
-                )}
-                {tab === "completed" && (
-                  <>
-                    <button
-                      onClick={() => useAsTemplate(c.id)}
-                      disabled={creating}
-                      className="rounded-md px-2 py-1 text-xs text-bb-text-tertiary hover:bg-bb-surface hover:text-bb-text"
-                    >
-                      Template
-                    </button>
-                    <button
-                      onClick={() => archive(c.id, "completed")}
-                      className="rounded-md px-2 py-1 text-xs text-bb-text-tertiary hover:bg-bb-surface hover:text-bb-text"
-                    >
-                      Archive
-                    </button>
-                  </>
-                )}
-                {tab === "archived" && (
-                  <>
-                    <button
-                      onClick={() => unarchive(c.id)}
-                      className="rounded-md px-2 py-1 text-xs text-bb-text-tertiary hover:bg-bb-surface hover:text-bb-text"
-                    >
-                      Unarchive
-                    </button>
-                    <button
-                      onClick={() => permanentlyDelete(c.id)}
-                      className="rounded-md px-2 py-1 text-xs text-bb-text-tertiary hover:bg-bb-red-dim hover:text-bb-text"
-                    >
-                      Erase
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+                </>
+              )}
+            </>
+          )}
+        />
       </main>
 
       {refreshOpen && <RefreshReposModal onClose={() => setRefreshOpen(false)} />}
