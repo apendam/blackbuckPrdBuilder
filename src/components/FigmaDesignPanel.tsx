@@ -10,6 +10,8 @@ interface FigmaJob {
   brief?: string;
   corrections?: string;
   handoff?: string;
+  hasMockup?: boolean;
+  repos?: { at: string; results: { repo: string; status: string; detail: string }[] };
   appliedToPrd?: boolean;
   progress: string[];
   error?: string;
@@ -111,11 +113,25 @@ export function FigmaDesignPanel({ conversationId, onApplied }: { conversationId
 
   return (
     <div className="mx-auto max-w-4xl px-8 py-8 print:hidden">
-      <h2 className="font-display mb-1 text-lg font-medium lowercase tracking-tight text-bb-text">Figma designs</h2>
+      <h2 className="font-display mb-1 text-lg font-medium lowercase tracking-tight text-bb-text">Design mockup</h2>
       <p className="mb-5 text-xs text-bb-text-tertiary">
-        Screens for the Boss and BB Pro apps, derived from this PRD and the apps&apos; real code. Links only; nothing
-        is drawn until you confirm the brief.
+        Screens for the Boss and BB Pro apps, derived from this PRD and the apps&apos; real code, as a clickable HTML
+        mockup. Nothing is built until you confirm the brief.
       </p>
+
+      {job?.repos && (() => {
+        const r = job.repos.results;
+        const count = (st: string) => r.filter((x) => x.status === st).length;
+        const failed = r.filter((x) => x.status === "failed");
+        return (
+          <p className={`mb-4 text-xs ${failed.length ? "text-bb-amber" : "text-bb-text-tertiary"}`}>
+            Code refreshed {new Date(job.repos.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}:{" "}
+            {count("up-to-date")} up to date, {count("updated")} updated
+            {count("skipped") > 0 && `, ${count("skipped")} not cloned`}
+            {failed.length > 0 && `, ${failed.length} failed (${failed.map((f) => f.repo).join(", ")}), so those use the local copy`}.
+          </p>
+        );
+      })()}
 
       {!available && (
         <p className="mb-4 rounded-md border border-bb-red bg-bb-red-dim px-3 py-2 text-xs text-bb-text">
@@ -137,13 +153,13 @@ export function FigmaDesignPanel({ conversationId, onApplied }: { conversationId
       {running && job && (
         <div className="rounded-lg border border-bb-border bg-bb-panel p-4">
           <div className="mb-2 text-sm text-bb-text">
-            {job.status === "briefing" ? "Drafting the design brief" : "Building in Figma"}
+            {job.status === "briefing" ? "Drafting the design brief" : "Building the mockup"}
             <span className="ml-2 text-xs text-bb-text-tertiary">{elapsed(job.startedAt, now)}</span>
           </div>
           <p className="mb-2 text-xs text-bb-text-tertiary">
             {job.status === "briefing"
               ? "Usually a few minutes."
-              : "This can take 10-20 minutes. You can leave this page; the run continues on the server."}
+              : "Usually a few minutes. You can leave this page; the run continues on the server."}
           </p>
           {job.progress.length > 0 && (
             <ul className="space-y-0.5 font-mono text-[11px] text-bb-text-tertiary">
@@ -178,7 +194,7 @@ export function FigmaDesignPanel({ conversationId, onApplied }: { conversationId
           />
           <div className="flex gap-2">
             <button onClick={() => act("build")} disabled={busy || !available} className={btn}>
-              Build in Figma
+              Build mockup
             </button>
             <button onClick={() => act("brief")} disabled={busy || !available} className={ghost}>
               Redraft
@@ -187,14 +203,34 @@ export function FigmaDesignPanel({ conversationId, onApplied }: { conversationId
         </div>
       )}
 
-      {job?.status === "done" && job.handoff && (
+      {job?.status === "done" && (job.handoff || job.hasMockup) && (
         <div>
+          {job.hasMockup && (
+            <div className="mb-4 overflow-hidden rounded-lg border border-bb-border bg-white">
+              <iframe
+                src={`${url}?mockup&v=${encodeURIComponent(job.startedAt)}`}
+                title="Design mockup"
+                sandbox="allow-scripts"
+                className="h-[80vh] w-full border-0"
+              />
+            </div>
+          )}
           <div className="mb-4 rounded-lg border border-bb-border bg-bb-panel p-5">
-            <Markdown text={job.handoff} />
+            <Markdown text={job.handoff ?? ""} />
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {job.hasMockup && (
+              <>
+                <a href={`${url}?mockup`} target="_blank" rel="noreferrer" className={ghost}>
+                  Open
+                </a>
+                <a href={`${url}?mockup&download`} className={ghost}>
+                  Download
+                </a>
+              </>
+            )}
             <button onClick={() => act("apply")} disabled={busy || job.appliedToPrd} className={btn}>
-              {job.appliedToPrd ? "Added to PRD" : "Add to PRD"}
+              {job.appliedToPrd ? "Added to PRD" : "Add summary to PRD"}
             </button>
             <button onClick={() => act("reset")} disabled={busy} className={ghost}>
               Start over
@@ -202,7 +238,7 @@ export function FigmaDesignPanel({ conversationId, onApplied }: { conversationId
           </div>
           {job.appliedToPrd && (
             <p className="mt-2 text-xs text-bb-text-tertiary">
-              The links are in the PRD&apos;s Design section. Re-export the Google Doc to carry them there.
+              The design summary is in the PRD&apos;s Design section. The mockup itself stays here in the viewer; download it to share.
             </p>
           )}
         </div>

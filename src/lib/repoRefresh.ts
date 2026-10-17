@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
-import { KNOWN_REPOS, RepoName } from "./repoList";
+import { getKnownRepos } from "./repoRegistry";
 import { WORKSPACE_ROOT } from "./knowledgeBase";
 
 const execFileAsync = promisify(execFile);
@@ -27,7 +27,7 @@ async function isShallow(repoDir: string): Promise<boolean> {
 }
 
 export async function refreshRepo(repo: string): Promise<RepoRefreshResult> {
-  if (!(KNOWN_REPOS as readonly string[]).includes(repo)) {
+  if (!getKnownRepos().includes(repo)) {
     return { repo, status: "failed", detail: "unknown repo" };
   }
   const repoDir = path.join(WORKSPACE_ROOT, repo);
@@ -81,6 +81,7 @@ export async function refreshRepo(repo: string): Promise<RepoRefreshResult> {
 }
 
 export async function refreshRepos(repos: string[]): Promise<RepoRefreshResult[]> {
-  const valid = repos.filter((r): r is RepoName => (KNOWN_REPOS as readonly string[]).includes(r));
+  const known = getKnownRepos();
+  const valid = repos.filter((r) => known.includes(r));
   return Promise.all(valid.map(refreshRepo));
 }

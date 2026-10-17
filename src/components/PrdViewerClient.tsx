@@ -717,7 +717,7 @@ export function PrdViewerClient({
                 mode === m ? "bg-bb-red text-white" : "text-bb-text-tertiary hover:text-bb-text-secondary"
               }`}
             >
-              {m === "prd" ? "PRD" : m === "transcript" ? "Conversation" : m === "design" ? "Figma" : m}
+              {m === "prd" ? "PRD" : m === "transcript" ? "Conversation" : m === "design" ? "Design" : m}
             </button>
           ))}
         </div>

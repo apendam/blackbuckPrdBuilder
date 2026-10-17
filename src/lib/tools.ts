@@ -1,5 +1,4 @@
 import { MODEL_FACING_PHASES } from "./types";
-import { KNOWN_REPOS } from "./knowledgeBase";
 
 // Canonical, wire-format-agnostic tool definitions -- one list shared by every
 // provider adapter. `schema` is plain JSON Schema, valid as both Anthropic's
@@ -38,7 +37,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "read_repo_file",
-    description: `Read a file from a live local clone of one of Blackbuck's repos, to re-verify exact current behavior before citing it. Known repos: ${KNOWN_REPOS.join(", ")}.`,
+    description: `Read a file from a live local clone of one of Blackbuck's repos, to re-verify exact current behavior before citing it. The known repo names are listed in the system prompt.`,
     schema: {
       type: "object",
       properties: {

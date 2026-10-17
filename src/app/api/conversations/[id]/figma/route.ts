@@ -6,6 +6,7 @@ import { readPrdMarkdown } from "@/lib/knowledgeBase";
 import {
   figmaDesignerAvailable,
   insertHandoffIntoPrd,
+  readMockup,
   markAppliedToPrd,
   readFigmaJob,
   resetFigmaJob,
@@ -29,9 +30,27 @@ async function load(params: Promise<{ id: string }>) {
   return { id, conversation, prdPath: conversation.prdMarkdownPath } as const;
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await load(params);
   if ("error" in ctx) return ctx.error;
+  if (req.nextUrl.searchParams.get("mockup") !== null) {
+    const html = readMockup(ctx.id);
+    if (!html) return NextResponse.json({ error: "No mockup yet" }, { status: 404 });
+    // Model-written HTML: served with a CSP that allows inline script/style
+    // but no network, no framing others, and no form posts, so it can draw
+    // and animate but can't call out or reach the app's own origin data.
+    return new NextResponse(html, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Security-Policy":
+          "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'; sandbox allow-scripts",
+        "X-Content-Type-Options": "nosniff",
+        ...(req.nextUrl.searchParams.get("download") !== null
+          ? { "Content-Disposition": 'attachment; filename="design-mockup.html"' }
+          : {}),
+      },
+    });
+  }
   const avail = figmaDesignerAvailable();
   return NextResponse.json({
     job: readFigmaJob(ctx.id),
@@ -41,7 +60,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 // action: "brief" (draft the design brief), "build" (PM confirmed -- draw it in
-// Figma), "apply" (write the links into the PRD's Design section), "reset".
+// the mockup), "apply" (write the links into the PRD's Design section), "reset".
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await load(params);
   if ("error" in ctx) return ctx.error;
@@ -70,8 +89,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ job: startBrief(ctx.id, prd) });
     }
     if (body.action === "build") {
-      const title = ctx.conversation.title || "PRD";
-      return NextResponse.json({ job: startBuild(ctx.id, prd, title, body.corrections ?? "") });
+      return NextResponse.json({ job: startBuild(ctx.id, prd, body.corrections ?? "") });
     }
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (err) {

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
-import { KNOWN_REPOS } from "./repoList";
+import { getKnownRepos } from "./repoRegistry";
 
 // Points at the worktree with this session's Pass 1/2 population work.
 // Once claude/prd-builder-pass1-pass2 is pushed and merged, this should
@@ -12,7 +12,7 @@ const SKILL_ROOT = path.join(WORKSPACE_ROOT, ".prd-builder-worktree/.claude/skil
 const REFERENCES_ROOT = path.join(SKILL_ROOT, "references");
 const SKILL_MD_PATH = path.join(SKILL_ROOT, "SKILL.md");
 
-export { KNOWN_REPOS };
+export { getKnownRepos };
 export { WORKSPACE_ROOT };
 
 function resolveWithinRoot(root: string, relativePath: string): string {
@@ -81,8 +81,8 @@ export function listReferenceDir(relativePath: string): string[] {
 }
 
 export function readRepoFile(repo: string, relativePath: string): string {
-  if (!KNOWN_REPOS.includes(repo as (typeof KNOWN_REPOS)[number])) {
-    return `ERROR: unknown repo "${repo}". Known repos: ${KNOWN_REPOS.join(", ")}`;
+  if (!getKnownRepos().includes(repo)) {
+    return `ERROR: unknown repo "${repo}". Known repos: ${getKnownRepos().join(", ")}`;
   }
   const repoRoot = path.join(WORKSPACE_ROOT, repo);
   let full: string;
@@ -106,8 +106,8 @@ export function readRepoFile(repo: string, relativePath: string): string {
 }
 
 export function listRepoFiles(repo: string, relativePath: string): string {
-  if (!KNOWN_REPOS.includes(repo as (typeof KNOWN_REPOS)[number])) {
-    return `ERROR: unknown repo "${repo}". Known repos: ${KNOWN_REPOS.join(", ")}`;
+  if (!getKnownRepos().includes(repo)) {
+    return `ERROR: unknown repo "${repo}". Known repos: ${getKnownRepos().join(", ")}`;
   }
   const repoRoot = path.join(WORKSPACE_ROOT, repo);
   let full: string;
@@ -138,8 +138,8 @@ const SEARCH_MAX_LINES = 200;
 // mechanical, exhaustive search removes that gap at the tool level instead
 // of hoping a skill instruction gets re-read carefully enough, every time.
 export function searchRepo(repo: string, pattern: string): string {
-  if (!KNOWN_REPOS.includes(repo as (typeof KNOWN_REPOS)[number])) {
-    return `ERROR: unknown repo "${repo}". Known repos: ${KNOWN_REPOS.join(", ")}`;
+  if (!getKnownRepos().includes(repo)) {
+    return `ERROR: unknown repo "${repo}". Known repos: ${getKnownRepos().join(", ")}`;
   }
   if (!pattern || pattern.trim().length < 2) {
     return "ERROR: pattern is too short to search with -- use at least 2 characters.";
