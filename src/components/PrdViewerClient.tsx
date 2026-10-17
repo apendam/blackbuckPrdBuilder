@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
 import { PrdCommentLayer } from "@/components/PrdCommentLayer";
+import { FigmaDesignPanel } from "@/components/FigmaDesignPanel";
 import { ChatMessage as ChatMessageBubble } from "@/components/ChatMessage";
 import type { ConversationView } from "@/lib/conversations";
 import type { DocComment } from "@/lib/googleDocs";
@@ -116,7 +117,7 @@ function svgStringToPngDataUrl(svgString: string, scale = 2): Promise<RenderedMe
     img.src = objectUrl;
   });
 }
-type ViewMode = "prd" | "transcript" | "diff" | "activity" | "notes";
+type ViewMode = "prd" | "transcript" | "diff" | "activity" | "notes" | "design";
 
 function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -708,7 +709,7 @@ export function PrdViewerClient({
 
       <div className="flex flex-wrap items-center gap-4 border-b border-bb-border-subtle bg-bb-bg px-8 py-2 print:hidden">
         <div className="flex gap-1">
-          {(["prd", "transcript", "activity", "notes"] as ViewMode[]).map((m) => (
+          {(["prd", "design", "transcript", "activity", "notes"] as ViewMode[]).map((m) => (
             <button
               key={m}
               onClick={() => setMode(m)}
@@ -716,7 +717,7 @@ export function PrdViewerClient({
                 mode === m ? "bg-bb-red text-white" : "text-bb-text-tertiary hover:text-bb-text-secondary"
               }`}
             >
-              {m === "prd" ? "PRD" : m === "transcript" ? "Conversation" : m}
+              {m === "prd" ? "PRD" : m === "transcript" ? "Conversation" : m === "design" ? "Figma" : m}
             </button>
           ))}
         </div>
@@ -804,6 +805,10 @@ export function PrdViewerClient({
             onDismissFinding={handleDismissFinding}
             onReopenFinding={handleReopenFinding}
           />
+        )}
+
+        {mode === "design" && (
+          <FigmaDesignPanel conversationId={conversation.id} onApplied={() => router.refresh()} />
         )}
 
         {mode === "transcript" && (
