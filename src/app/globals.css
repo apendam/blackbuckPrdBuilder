@@ -134,6 +134,13 @@ body {
 /* A question just sent to the judge, before its real answer comes back --
    dashed instead of solid so it reads as "not settled yet" at a glance,
    distinct from an actual (already-answered) judge finding. */
+.prd-mark-flash {
+  animation: prd-mark-flash 1.8s ease-out;
+}
+@keyframes prd-mark-flash {
+  0%, 40% { background-color: var(--bb-red); color: #fff; outline: 3px solid var(--bb-red); outline-offset: 2px; }
+  100% { outline-color: transparent; }
+}
 .prd-judge-mark-pending {
   border-bottom-style: dashed;
   opacity: 0.85;

@@ -213,6 +213,21 @@ function countOccurrences(haystack: string, needle: string): number {
   }
 }
 
+// Text of a range as the highlighter sees it: just the concatenated text
+// nodes (no block-break newlines that Selection.toString() adds), and without
+// the decorative comment icons the highlighter itself inserts. Selection time
+// and highlight time must agree on this, or occurrence indexes drift and a
+// selection spanning several elements never matches.
+function plainText(range: Range): string {
+  const frag = range.cloneContents();
+  frag.querySelectorAll("sup.prd-comment-icon, sup.prd-judge-icon").forEach((el) => el.remove());
+  return frag.textContent ?? "";
+}
+
+function anchorKey(a: Anchor): string {
+  return `${a.occurrence}:${a.quote}`;
+}
+
 // The nearest scrollable ancestor of the PRD content -- PrdViewerClient
 // scrolls a specific `overflow-y-auto` div, not the window, so
 // window.scrollY isn't the right thing to read/restore around a DOM
@@ -288,6 +303,9 @@ export function PrdCommentLayer({
   const [judgeReplyDraft, setJudgeReplyDraft] = useState<{ findingId: string; text: string } | null>(null);
   const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const scrollRestoreRef = useRef<{ el: HTMLElement; top: number } | null>(null);
+  // Anchors that live inside a diagram have no <mark> of their own, so
+  // "jump to this comment" scrolls to the diagram instead.
+  const diagramByAnchorKey = useRef(new Map<string, HTMLElement>());
 
   // Deliberately NOT seeded from localStorage in the useState initializer --
   // that function runs during server rendering too, where localStorage
@@ -396,9 +414,10 @@ export function PrdCommentLayer({
     function handleMouseUp() {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
-      const text = sel.toString().trim();
-      if (!text || !containerRef.current) return;
+      if (!containerRef.current) return;
       const range = sel.getRangeAt(0);
+      const text = plainText(range).trim();
+      if (!text) return;
       if (!containerRef.current.contains(range.commonAncestorContainer)) return;
 
       // Which occurrence of `text` this selection is: count how many full
@@ -408,7 +427,7 @@ export function PrdCommentLayer({
       const preRange = document.createRange();
       preRange.selectNodeContents(containerRef.current);
       preRange.setEnd(range.startContainer, range.startOffset);
-      const occurrence = countOccurrences(preRange.toString(), text);
+      const occurrence = countOccurrences(plainText(preRange), text);
 
       const rect = range.getBoundingClientRect();
       const containerRect = containerRef.current.getBoundingClientRect();
@@ -497,6 +516,7 @@ export function PrdCommentLayer({
     const svgAnchorsByDiagram = new Map<HTMLElement, Anchor[]>();
     const svgFindingIdsByDiagram = new Map<HTMLElement, string[]>();
     const svgAskIdsByDiagram = new Map<HTMLElement, string[]>();
+    diagramByAnchorKey.current.clear();
 
     // One combined target list, PM comments and anchored judge findings and
     // ask entries alike -- they mark the SAME document via the SAME single
@@ -528,158 +548,171 @@ export function PrdCommentLayer({
     ];
 
     if (targets.length > 0) {
-      // One target occurrence per quote, keyed by occurrence index, so the
-      // walk below can tell "is THIS specific occurrence the commented one"
-      // rather than lighting up every occurrence of the phrase.
-      const targetsByQuote = new Map<string, Map<number, Target>>();
-      for (const t of targets) {
-        if (!targetsByQuote.has(t.quote)) targetsByQuote.set(t.quote, new Map());
-        // If two different kinds somehow land on the exact same
-        // quote+occurrence, first-in-array wins rather than silently
-        // overwriting -- an edge case rare enough not to warrant a combined
-        // popup, but a deterministic pick is still better than "whichever
-        // happened to iterate last."
-        const existing = targetsByQuote.get(t.quote)!;
-        if (!existing.has(t.occurrence)) existing.set(t.occurrence, t);
-      }
-      // Longest quote first so a short commented quote that happens to be a
-      // substring of a longer one doesn't get matched inside text already
-      // claimed by the longer one.
-      const sortedQuotes = Array.from(targetsByQuote.keys()).sort((a, b) => b.length - a.length);
-      const seenCount = new Map<string, number>(sortedQuotes.map((q) => [q, 0]));
-
+      // Resolve every target against ONE concatenation of the container's
+      // text nodes, not node by node: a commented phrase routinely spans
+      // several text nodes (bold/code/link inside a sentence, two list items,
+      // neighbouring table cells), and a per-node indexOf silently drops
+      // those -- the comment saved but nothing ever showed in the document.
+      // The same concatenation is what selection time counts occurrences in
+      // (see plainText), so occurrence indexes line up.
       const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
       const textNodes: Text[] = [];
+      const starts: number[] = [];
+      let full = "";
       let node = walker.nextNode();
       while (node) {
         textNodes.push(node as Text);
+        starts.push(full.length);
+        full += (node as Text).data;
         node = walker.nextNode();
       }
 
-      for (const textNode of textNodes) {
-        if (!textNode.parentNode || !textNode.data.trim()) continue;
-        for (const quote of sortedQuotes) {
-          const idx = textNode.data.indexOf(quote);
-          if (idx === -1) continue;
+      type Resolved = { target: Target; start: number; end: number };
+      const accepted: Resolved[] = [];
+      for (const target of targets) {
+        let pos = 0;
+        let idx = -1;
+        for (let n = 0; n <= target.occurrence; n++) {
+          idx = full.indexOf(target.quote, pos);
+          if (idx === -1) break;
+          pos = idx + target.quote.length;
+        }
+        if (idx === -1) continue;
+        const end = idx + target.quote.length;
+        // Two targets claiming overlapping text: first in array wins, same
+        // deterministic pick as before -- not worth a combined popup.
+        if (accepted.some((r) => idx < r.end && end > r.start)) continue;
+        accepted.push({ target, start: idx, end });
+      }
 
-          const occurrenceIndex = seenCount.get(quote)!;
-          seenCount.set(quote, occurrenceIndex + 1);
-          const target = targetsByQuote.get(quote)?.get(occurrenceIndex);
-          if (!target) break; // this specific occurrence isn't a commented/flagged one
-          const { anchor } = target;
+      // Wrap from the END of the document backwards so splitting a text node
+      // never shifts the offsets of anything still waiting to be wrapped.
+      accepted.sort((a, b) => b.start - a.start);
+      for (const { target, start, end } of accepted) {
+        const { anchor } = target;
+        const key = anchorKey(anchor);
 
-          // Mermaid diagram labels live inside an SVG <text>/<tspan> -- an
-          // HTML <mark>/<sup> isn't a valid child there, so the SVG renderer
-          // just paints nothing for it (the label doesn't error, it just
-          // silently disappears, box size and all). The occurrence count
-          // above still has to advance either way (selection-time counting
-          // doesn't distinguish SVG from prose), so this can't be skipped
-          // earlier without breaking every occurrence index after it -- it
-          // can only skip the actual DOM wrap once it gets here. Recorded
-          // against its diagram instead, for the summary badge built below.
-          const svg = textNode.parentElement?.closest("svg");
-          if (svg) {
-            const diagram = svg.closest<HTMLElement>(".prd-mermaid") ?? svg.parentElement;
-            if (diagram && target.kind === "pm") {
+        const segs: { node: Text; from: number; to: number }[] = [];
+        for (let i = 0; i < textNodes.length; i++) {
+          const nodeStart = starts[i];
+          const nodeEnd = nodeStart + textNodes[i].data.length;
+          if (nodeEnd <= start || nodeStart >= end) continue;
+          const from = Math.max(start, nodeStart) - nodeStart;
+          const to = Math.min(end, nodeEnd) - nodeStart;
+          // Whitespace between blocks is part of the text for counting, but
+          // there's nothing to highlight in it.
+          if (!textNodes[i].data.slice(from, to).trim()) continue;
+          segs.push({ node: textNodes[i], from, to });
+        }
+        if (segs.length === 0) continue;
+
+        // Mermaid diagram labels live inside an SVG <text>/<tspan> -- an
+        // HTML <mark>/<sup> isn't a valid child there, so the SVG renderer
+        // just paints nothing for it. Recorded against its diagram instead,
+        // for the summary badge built below.
+        const svg = segs[0].node.parentElement?.closest("svg");
+        if (svg) {
+          const diagram = svg.closest<HTMLElement>(".prd-mermaid") ?? svg.parentElement;
+          if (diagram) {
+            diagramByAnchorKey.current.set(key, diagram);
+            if (target.kind === "pm") {
               svgAnchorsByDiagram.set(diagram, [...(svgAnchorsByDiagram.get(diagram) ?? []), anchor]);
-            } else if (diagram && target.kind === "judge") {
-              svgFindingIdsByDiagram.set(diagram, [
-                ...(svgFindingIdsByDiagram.get(diagram) ?? []),
-                target.findingId!,
-              ]);
-            } else if (diagram && target.kind === "ask") {
+            } else if (target.kind === "judge") {
+              svgFindingIdsByDiagram.set(diagram, [...(svgFindingIdsByDiagram.get(diagram) ?? []), target.findingId!]);
+            } else {
               svgAskIdsByDiagram.set(diagram, [...(svgAskIdsByDiagram.get(diagram) ?? []), target.askId!]);
             }
-            break;
           }
+          continue;
+        }
 
-          const data = textNode.data;
-          const before = data.slice(0, idx);
-          const match = data.slice(idx, idx + quote.length);
-          const after = data.slice(idx + quote.length);
-          const parent = textNode.parentNode;
+        const icon = document.createElement("sup");
+        icon.className = target.kind === "pm" ? "prd-comment-icon" : "prd-judge-icon";
+        icon.textContent = target.kind === "pm" ? "ⓘ" : target.kind === "ask" ? "❓" : "🔍";
+        icon.setAttribute("role", "button");
+        icon.setAttribute(
+          "aria-label",
+          target.kind === "pm"
+            ? "View comment"
+            : target.kind === "ask"
+              ? "View your question for the judge"
+              : "View verification finding"
+        );
+
+        // Popups open next to whichever piece of the highlight was touched.
+        const place = (e: Event) => {
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          const cRect = container.getBoundingClientRect();
+          return { top: rect.bottom - cRect.top + 6, left: Math.max(0, rect.left - cRect.left) };
+        };
+        const listeners: [string, (e: Event) => void][] = [];
+        const hoverListeners: [string, (e: Event) => void][] = [];
+        if (target.kind === "pm") {
+          const openHover = (e: Event) => {
+            clearTimeout(hoverCloseTimer.current);
+            setHoverPopup({ anchor, ...place(e) });
+          };
+          const scheduleClose = () => {
+            hoverCloseTimer.current = setTimeout(() => {
+              // Read the refs, not the closed-over commentDraft/replyDraft --
+              // see the comment on those refs for why.
+              if (
+                (commentDraftRef.current && sameAnchor(commentDraftRef.current.anchor, anchor)) ||
+                (replyDraftRef.current && sameAnchor(replyDraftRef.current.anchor, anchor))
+              )
+                return;
+              setHoverPopup(null);
+            }, 250);
+          };
+          hoverListeners.push(["mouseenter", openHover], ["mouseleave", scheduleClose]);
+          listeners.push(["click", openHover]);
+        } else if (target.kind === "judge") {
+          // Click-to-open, not hover -- see JudgePopup's own note.
+          const findingId = target.findingId!;
+          listeners.push([
+            "click",
+            (e) => {
+              e.stopPropagation();
+              setJudgePopup({ findingId, ...place(e) });
+            },
+          ]);
+        } else {
+          // Ask entry -- same click-to-open pattern, opens a simple
+          // edit/remove popup for the question itself.
+          listeners.push([
+            "click",
+            (e) => {
+              e.stopPropagation();
+              setAskPopup({ anchor, ...place(e) });
+            },
+          ]);
+        }
+
+        // Reverse document order, so the first segment handled is the last
+        // one in the document -- the icon goes after it.
+        for (let s = segs.length - 1; s >= 0; s--) {
+          const { node: textNode, from, to } = segs[s];
+          let mid = textNode;
+          if (from > 0) mid = textNode.splitText(from);
+          if (to - from < mid.data.length) mid.splitText(to - from);
 
           const mark = document.createElement("mark");
           mark.className = target.kind === "pm" ? "prd-comment-mark" : "prd-judge-mark";
           if (target.kind === "ask") mark.classList.add("prd-judge-mark-pending");
-          mark.textContent = match;
-
-          const icon = document.createElement("sup");
-          icon.className = target.kind === "pm" ? "prd-comment-icon" : "prd-judge-icon";
-          icon.textContent = target.kind === "pm" ? "ⓘ" : target.kind === "ask" ? "❓" : "🔍";
-          icon.setAttribute("role", "button");
-          icon.setAttribute(
-            "aria-label",
-            target.kind === "pm"
-              ? "View comment"
-              : target.kind === "ask"
-                ? "View your question for the judge"
-                : "View verification finding"
-          );
-
-          if (target.kind === "pm") {
-            const openHover = () => {
-              clearTimeout(hoverCloseTimer.current);
-              const rect = mark.getBoundingClientRect();
-              const cRect = container.getBoundingClientRect();
-              setHoverPopup({
-                anchor,
-                top: rect.bottom - cRect.top + 6,
-                left: Math.max(0, rect.left - cRect.left),
-              });
-            };
-            const scheduleClose = () => {
-              hoverCloseTimer.current = setTimeout(() => {
-                // Read the refs, not the closed-over commentDraft/replyDraft --
-                // see the comment on those refs for why.
-                if (
-                  (commentDraftRef.current && sameAnchor(commentDraftRef.current.anchor, anchor)) ||
-                  (replyDraftRef.current && sameAnchor(replyDraftRef.current.anchor, anchor))
-                )
-                  return;
-                setHoverPopup(null);
-              }, 250);
-            };
-            mark.addEventListener("mouseenter", openHover);
-            mark.addEventListener("mouseleave", scheduleClose);
-            icon.addEventListener("mouseenter", openHover);
-            icon.addEventListener("mouseleave", scheduleClose);
-            icon.addEventListener("click", openHover);
-          } else if (target.kind === "judge") {
-            // Click-to-open, not hover -- see JudgePopup's own note.
-            const findingId = target.findingId!;
-            const openJudgePopup = (e: Event) => {
-              e.stopPropagation();
-              const rect = mark.getBoundingClientRect();
-              const cRect = container.getBoundingClientRect();
-              setJudgePopup({ findingId, top: rect.bottom - cRect.top + 6, left: Math.max(0, rect.left - cRect.left) });
-            };
-            mark.addEventListener("click", openJudgePopup);
-            icon.addEventListener("click", openJudgePopup);
-          } else {
-            // Ask entry -- same click-to-open pattern, opens a simple
-            // edit/remove popup for the question itself.
-            const askId = target.askId!;
-            const openAskPopup = (e: Event) => {
-              e.stopPropagation();
-              const rect = mark.getBoundingClientRect();
-              const cRect = container.getBoundingClientRect();
-              setAskPopup({ anchor, top: rect.bottom - cRect.top + 6, left: Math.max(0, rect.left - cRect.left) });
-            };
-            mark.addEventListener("click", openAskPopup);
-            icon.addEventListener("click", openAskPopup);
-            void askId; // referenced via anchor lookup in the popup, not directly
+          mark.dataset.anchorKey = key;
+          mark.textContent = mid.data;
+          for (const [type, fn] of [...hoverListeners, ...(target.kind === "pm" ? [] : listeners)]) {
+            mark.addEventListener(type, fn);
           }
-
-          parent.insertBefore(document.createTextNode(before), textNode);
-          parent.insertBefore(mark, textNode);
-          parent.insertBefore(icon, textNode);
-          parent.insertBefore(document.createTextNode(after), textNode);
-          parent.removeChild(textNode);
-
+          const parent = mid.parentNode!;
+          parent.insertBefore(mark, mid);
+          if (s === segs.length - 1) {
+            parent.insertBefore(icon, mid);
+            for (const [type, fn] of [...hoverListeners, ...listeners]) icon.addEventListener(type, fn);
+            iconElements.push(icon);
+          }
+          parent.removeChild(mid);
           markElements.push(mark);
-          iconElements.push(icon);
-          break; // one match per original text node -- see sort note above
         }
       }
     }
@@ -758,6 +791,37 @@ export function PrdCommentLayer({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threads, judgeFindings, askEntries, contentReady]);
+
+  // Jumps the document to where a feedback-panel entry was anchored and
+  // pulses the highlight so the eye can find it.
+  function scrollToAnchor(anchor: Anchor) {
+    const container = containerRef.current;
+    if (!container) return;
+    const key = anchorKey(anchor);
+    const marks = Array.from(container.querySelectorAll<HTMLElement>("mark[data-anchor-key]")).filter(
+      (m) => m.dataset.anchorKey === key
+    );
+    const el = marks[0] ?? diagramByAnchorKey.current.get(key);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const flashing = marks.length > 0 ? marks : [el];
+    for (const m of flashing) {
+      m.classList.remove("prd-mark-flash");
+      void m.offsetWidth; // restart the animation if it is already running
+      m.classList.add("prd-mark-flash");
+      setTimeout(() => m.classList.remove("prd-mark-flash"), 1800);
+    }
+  }
+
+  // Clicking the body of a panel card jumps to its anchor, but a click on
+  // one of the card's own controls (edit/remove/reply, inputs) must not.
+  function jumpOnCardClick(anchor: Anchor | null) {
+    return (e: React.MouseEvent) => {
+      if (!anchor) return;
+      if ((e.target as HTMLElement).closest("button, input, textarea, a")) return;
+      scrollToAnchor(anchor);
+    };
+  }
 
   function cancelHoverClose() {
     clearTimeout(hoverCloseTimer.current);
@@ -1629,7 +1693,12 @@ export function PrdCommentLayer({
           )}
 
           {threads.map((t) => (
-            <div key={`${t.anchor.quote} ${t.anchor.occurrence}`} className="mb-3 rounded-md border-l-2 border-bb-red bg-bb-surface p-2">
+            <div
+              key={`${t.anchor.quote} ${t.anchor.occurrence}`}
+              onClick={jumpOnCardClick(t.anchor)}
+              title="Click to jump to this spot in the PRD"
+              className="mb-3 cursor-pointer rounded-md border-l-2 border-bb-red bg-bb-surface p-2 hover:bg-bb-bg"
+            >
               <div className="mb-1.5 text-xs italic text-bb-text-tertiary">
                 &ldquo;{t.anchor.quote}&rdquo;
                 {t.anchor.occurrence > 0 && (
@@ -1699,7 +1768,12 @@ export function PrdCommentLayer({
             <div className="mb-3">
               <div className="mb-1.5 text-xs font-bold lowercase text-bb-amber">Questions for the judge ({askEntries.length})</div>
               {askEntries.map((a) => (
-                <div key={a.id} className="mb-2 rounded-md border-l-2 border-bb-amber bg-bb-surface p-2">
+                <div
+                  key={a.id}
+                  onClick={jumpOnCardClick(a.anchor)}
+                  title="Click to jump to this spot in the PRD"
+                  className="mb-2 cursor-pointer rounded-md border-l-2 border-bb-amber bg-bb-surface p-2 hover:bg-bb-bg"
+                >
                   {renderAskEntry(a.id)}
                 </div>
               ))}
@@ -1712,7 +1786,12 @@ export function PrdCommentLayer({
                 Verification ({openJudgeFindings.length} open)
               </div>
               {openJudgeFindings.map((f) => (
-                <div key={f.id} className="mb-2 rounded-md border-l-2 border-bb-amber bg-bb-surface p-2">
+                <div
+                  key={f.id}
+                  onClick={jumpOnCardClick(f.prdQuote ? { quote: f.prdQuote, occurrence: f.occurrence } : null)}
+                  title={f.prdQuote ? "Click to jump to this spot in the PRD" : undefined}
+                  className={`mb-2 rounded-md border-l-2 border-bb-amber bg-bb-surface p-2 ${f.prdQuote ? "cursor-pointer hover:bg-bb-bg" : ""}`}
+                >
                   {renderJudgeFinding(f.id)}
                 </div>
               ))}
