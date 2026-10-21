@@ -1,0 +1,117 @@
+# k8s Deployment for the PRD Builder (Next.js 16 + SQLite, port 3000).
+# Modelled on tzf-activation-web-sdk/manifests (non-root user, probes, resource limits).
+#
+# SQLite lives on a PersistentVolume, so this runs a single replica with the
+# Recreate strategy: two pods must never open the same database file.
+#
+# The image placeholder ":v1" follows the other repos' GitOps flow (the pipeline
+# swaps the tag with sed) -- keep the string stable if you reuse that job.
+#
+# TODO before first deploy:
+#  - namespace "stress" is copied from the sibling repos; change it if this should live elsewhere.
+#  - AUTH_URL must be the public URL users open (and match the Google OAuth redirect).
+#  - The app reads the PRD-builder skill and cloned repos from
+#    /home/node/blackbuck-workspace; nothing mounts that path yet.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prd-builder
+  namespace: stress
+  labels:
+    app: prd-builder
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: prd-builder
+  template:
+    metadata:
+      labels:
+        app: prd-builder
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000                    # the `node` user in the Dockerfile
+        runAsGroup: 1000
+        fsGroup: 1000                      # so the mounted volumes are writable
+      containers:
+        - name: prd-builder
+          image: 735317561518.dkr.ecr.ap-south-1.amazonaws.com/prd-builder-chatbot:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            - name: NODE_ENV
+              value: "production"
+            - name: AUTH_TRUST_HOST
+              value: "true"
+            - name: AUTH_URL
+              value: "https://prd-builder.example.com"   # TODO: real URL
+            - name: DATABASE_URL
+              value: "file:/app/db/dev.db"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: prd-builder-secrets
+                  key: ANTHROPIC_API_KEY
+            - name: AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: prd-builder-secrets
+                  key: AUTH_SECRET
+            - name: AUTH_GOOGLE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: prd-builder-secrets
+                  key: AUTH_GOOGLE_ID
+            - name: AUTH_GOOGLE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: prd-builder-secrets
+                  key: AUTH_GOOGLE_SECRET
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: prd-builder-secrets
+                  key: OPENROUTER_API_KEY
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /signin                # unauthenticated page; the app has no /health route
+              port: http
+            initialDelaySeconds: 20        # `prisma db push` runs before the server starts
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /signin
+              port: http
+            initialDelaySeconds: 40
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi                  # headless Chrome renders diagrams
+          volumeMounts:
+            - name: db
+              mountPath: /app/db
+            - name: data
+              mountPath: /app/data
+      volumes:
+        - name: db
+          persistentVolumeClaim:
+            claimName: prd-builder-db
+        - name: data
+          persistentVolumeClaim:
+            claimName: prd-builder-data

@@ -56,7 +56,7 @@ export async function renderMermaidSourcesToPng(sources: string[]): Promise<(Buf
 
   let browser: Awaited<ReturnType<typeof puppeteer.launch>> | undefined;
   try {
-    browser = await puppeteer.launch({ headless: true });
+    browser = await puppeteer.launch({ headless: true, args: process.env.PUPPETEER_NO_SANDBOX ? ["--no-sandbox", "--disable-setuid-sandbox"] : [] });
     const page = await browser.newPage();
     // Wide stage so diagrams render at their natural size rather than being
     // squeezed to a narrow container (they get scaled down to page width when

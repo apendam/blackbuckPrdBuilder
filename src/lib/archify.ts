@@ -82,7 +82,7 @@ const MAX_VIEWPORT = { width: 2200, height: 1800 };
 // aspect ratio before the real screenshot, keeps small and large diagrams
 // both tightly framed instead of picking one fixed canvas size for both.
 async function screenshotArchifyHtml(htmlPath: string): Promise<Buffer> {
-  const browser = await puppeteer.launch({ headless: true });
+  const browser = await puppeteer.launch({ headless: true, args: process.env.PUPPETEER_NO_SANDBOX ? ["--no-sandbox", "--disable-setuid-sandbox"] : [] });
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1200, height: 900, deviceScaleFactor: 2 });

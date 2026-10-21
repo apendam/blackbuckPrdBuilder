@@ -1,0 +1,17 @@
+# ClusterIP service fronting the Deployment. An Ingress (ALB/nginx) or the
+# existing gateway should target this service on port 80 -> container 3000.
+apiVersion: v1
+kind: Service
+metadata:
+  name: prd-builder
+  namespace: stress                       # must match the Deployment namespace
+  labels:
+    app: prd-builder
+spec:
+  type: ClusterIP
+  selector:
+    app: prd-builder
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

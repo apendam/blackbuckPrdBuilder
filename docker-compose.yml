@@ -1,0 +1,21 @@
+services:
+  prd-builder:
+    build: .
+    ports:
+      - "3000:3000"
+    # ANTHROPIC_API_KEY, AUTH_SECRET, AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET, OPENROUTER_API_KEY
+    env_file:
+      - .env.local
+    environment:
+      # Must match the URL you open in the browser (and the Google OAuth redirect).
+      AUTH_URL: http://localhost:3000
+      DATABASE_URL: file:/app/db/dev.db
+    volumes:
+      - prd-db:/app/db            # SQLite database
+      - prd-data:/app/data        # saved PRDs, design jobs, mockups
+      # The skill and the cloned Blackbuck repos the app reads. Not baked into the
+      # image: they are internal and this repo is public.
+      - ${HOME}/blackbuck-workspace:/home/node/blackbuck-workspace
+volumes:
+  prd-db:
+  prd-data:

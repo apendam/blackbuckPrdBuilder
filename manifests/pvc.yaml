@@ -1,0 +1,23 @@
+# Storage the Deployment mounts: the SQLite database, and saved PRDs / design jobs.
+# Not in the sibling repos' manifests because they are stateless; this app is not.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prd-builder-db
+  namespace: stress
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prd-builder-data
+  namespace: stress
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
