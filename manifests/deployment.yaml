@@ -9,7 +9,7 @@
 #
 # TODO before first deploy:
 #  - namespace "stress" is copied from the sibling repos; change it if this should live elsewhere.
-#  - AUTH_URL must be the public URL users open (and match the Google OAuth redirect).
+#  - AUTH_URL is the public URL users open; it must match the Google OAuth redirect URI.
 #  - The app reads the PRD-builder skill and cloned repos from
 #    /home/node/blackbuck-workspace; nothing mounts that path yet.
 apiVersion: apps/v1
@@ -38,7 +38,7 @@ spec:
         fsGroup: 1000                      # so the mounted volumes are writable
       containers:
         - name: prd-builder
-          image: 735317561518.dkr.ecr.ap-south-1.amazonaws.com/prd-builder-chatbot:v1
+          image: 735317561518.dkr.ecr.ap-south-1.amazonaws.com/preprod-prd-builder:v1
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -51,7 +51,7 @@ spec:
             - name: AUTH_TRUST_HOST
               value: "true"
             - name: AUTH_URL
-              value: "https://prd-builder.example.com"   # TODO: real URL
+              value: "https://stress-prd-builder.blackbuck.com"
             - name: DATABASE_URL
               value: "file:/app/db/dev.db"
             - name: ANTHROPIC_API_KEY
