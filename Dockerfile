@@ -32,4 +32,4 @@ RUN mkdir -p /app/db /app/data && chown -R node:node /app/db /app/data
 USER node
 EXPOSE 3000
 # Creates/updates the SQLite schema, then starts Next on 0.0.0.0.
-CMD ["sh", "-c", "npx prisma db push --skip-generate && exec npm run start -- -H 0.0.0.0 -p ${PORT}"]
+CMD ["sh", "-c", "npx prisma db push && exec npm run start -- -H 0.0.0.0 -p ${PORT}"]

@@ -11,6 +11,7 @@
 #  - namespace "stress" is copied from the sibling repos; change it if this should live elsewhere.
 #  - CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD: from the Cloudflare Access application protecting this app.
 #    Sign-in is Cloudflare Access; the app verifies its JWT, so it must only be reachable through Cloudflare.
+#    Public URL (for reference): https://stress-prd-builder.blackbuck.com
 #  - The app reads the PRD-builder skill and cloned repos from
 #    /home/node/blackbuck-workspace; nothing mounts that path yet.
 apiVersion: apps/v1
@@ -39,7 +40,7 @@ spec:
         fsGroup: 1000                      # so the mounted volumes are writable
       containers:
         - name: prd-builder
-          image: 735317561518.dkr.ecr.ap-south-1.amazonaws.com/prd-builder-chatbot:v1
+          image: 735317561518.dkr.ecr.ap-south-1.amazonaws.com/preprod-prd-builder:v1
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
