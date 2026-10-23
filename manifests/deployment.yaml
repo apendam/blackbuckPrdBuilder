@@ -9,7 +9,8 @@
 #
 # TODO before first deploy:
 #  - namespace "stress" is copied from the sibling repos; change it if this should live elsewhere.
-#  - AUTH_URL must be the public URL users open (and match the Google OAuth redirect).
+#  - CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD: from the Cloudflare Access application protecting this app.
+#    Sign-in is Cloudflare Access; the app verifies its JWT, so it must only be reachable through Cloudflare.
 #  - The app reads the PRD-builder skill and cloned repos from
 #    /home/node/blackbuck-workspace; nothing mounts that path yet.
 apiVersion: apps/v1
@@ -48,10 +49,10 @@ spec:
               value: "3000"
             - name: NODE_ENV
               value: "production"
-            - name: AUTH_TRUST_HOST
-              value: "true"
-            - name: AUTH_URL
-              value: "https://prd-builder.example.com"   # TODO: real URL
+            - name: CF_ACCESS_TEAM_DOMAIN
+              value: "yourteam.cloudflareaccess.com"   # TODO: real team domain
+            - name: CF_ACCESS_AUD
+              value: "REPLACE_WITH_ACCESS_APP_AUD_TAG"     # TODO: Access application AUD
             - name: DATABASE_URL
               value: "file:/app/db/dev.db"
             - name: ANTHROPIC_API_KEY
@@ -59,21 +60,6 @@ spec:
                 secretKeyRef:
                   name: prd-builder-secrets
                   key: ANTHROPIC_API_KEY
-            - name: AUTH_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: prd-builder-secrets
-                  key: AUTH_SECRET
-            - name: AUTH_GOOGLE_ID
-              valueFrom:
-                secretKeyRef:
-                  name: prd-builder-secrets
-                  key: AUTH_GOOGLE_ID
-            - name: AUTH_GOOGLE_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: prd-builder-secrets
-                  key: AUTH_GOOGLE_SECRET
             - name: OPENROUTER_API_KEY
               valueFrom:
                 secretKeyRef:

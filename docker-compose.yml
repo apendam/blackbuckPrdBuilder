@@ -3,12 +3,12 @@ services:
     build: .
     ports:
       - "3000:3000"
-    # ANTHROPIC_API_KEY, AUTH_SECRET, AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET, OPENROUTER_API_KEY
+    # ANTHROPIC_API_KEY, OPENROUTER_API_KEY
+    # No Cloudflare Access here: the container runs in production mode, so DEV_USER_EMAIL is ignored and
+    # every page redirects to /signin. For local use run `npm run dev` instead; this file is for build checks.
     env_file:
       - .env.local
     environment:
-      # Must match the URL you open in the browser (and the Google OAuth redirect).
-      AUTH_URL: http://localhost:3000
       DATABASE_URL: file:/app/db/dev.db
     volumes:
       - prd-db:/app/db            # SQLite database

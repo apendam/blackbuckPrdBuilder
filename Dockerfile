@@ -23,7 +23,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
     PORT=3000 \
-    AUTH_TRUST_HOST=true \
     NEXT_TELEMETRY_DISABLED=1 \
     PUPPETEER_CACHE_DIR=/app/.cache/puppeteer \
     PUPPETEER_NO_SANDBOX=1 \

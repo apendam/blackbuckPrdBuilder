@@ -16,11 +16,11 @@ async function getValidAccessToken(userId: string): Promise<string> {
   });
   if (!account) {
     throw new GoogleDocsError(
-      "No Google account linked. Sign in with Google first."
+      "Google Docs export is unavailable: sign-in is handled by Cloudflare Access, so the app has no linked Google account or token."
     );
   }
   if (!account.access_token) {
-    throw new GoogleDocsError("No Google access token on file. Try signing out and back in.");
+    throw new GoogleDocsError("Google Docs export is unavailable: no Google access token is stored for this user (Google sign-in was removed).");
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
@@ -31,15 +31,15 @@ async function getValidAccessToken(userId: string): Promise<string> {
 
   if (!account.refresh_token) {
     throw new GoogleDocsError(
-      "Google access token expired and no refresh token is on file. Sign out and sign back in, " +
-        "granting Docs/Drive access, to fix this."
+      "Google Docs export is unavailable: the stored Google access token expired and there is no refresh " +
+        "token (Google sign-in was removed)."
     );
   }
 
   const clientId = process.env.AUTH_GOOGLE_ID;
   const clientSecret = process.env.AUTH_GOOGLE_SECRET;
   if (!clientId || !clientSecret) {
-    throw new GoogleDocsError("AUTH_GOOGLE_ID/AUTH_GOOGLE_SECRET not configured.");
+    throw new GoogleDocsError("Google Docs export is unavailable: the Google OAuth client (AUTH_GOOGLE_ID/AUTH_GOOGLE_SECRET) is not configured.");
   }
 
   const res = await fetch(TOKEN_URL, {
