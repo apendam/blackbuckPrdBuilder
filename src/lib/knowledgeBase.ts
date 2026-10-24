@@ -8,7 +8,10 @@ import { getKnownRepos } from "./repoRegistry";
 // Once claude/prd-builder-pass1-pass2 is pushed and merged, this should
 // track wherever the skill repo is checked out instead of a fixed worktree path.
 const WORKSPACE_ROOT = path.join(os.homedir(), "blackbuck-workspace");
-const SKILL_ROOT = path.join(WORKSPACE_ROOT, ".prd-builder-worktree/.claude/skills/prd-builder");
+// PRD_SKILL_DIR overrides the location (the container image ships a copy in ./skill/prd-builder, since
+// there is no ~/blackbuck-workspace worktree inside the cluster).
+const SKILL_ROOT =
+  process.env.PRD_SKILL_DIR ?? path.join(WORKSPACE_ROOT, ".prd-builder-worktree/.claude/skills/prd-builder");
 const REFERENCES_ROOT = path.join(SKILL_ROOT, "references");
 const SKILL_MD_PATH = path.join(SKILL_ROOT, "SKILL.md");
 
@@ -239,7 +242,8 @@ export function buildRiskySymbolDump(): string {
 // (see createRevision in conversations.ts) can share a title without one
 // version's file clobbering another's.
 export function savePrdMarkdown(conversationId: string, content: string): string {
-  const prdsDir = path.join(WORKSPACE_ROOT, "prd-builder-chatbot", "data", "prds");
+  // Relative to the app, not the home directory: in a container this is the mounted data volume.
+  const prdsDir = path.join(process.cwd(), "data", "prds");
   fs.mkdirSync(prdsDir, { recursive: true });
   const filePath = path.join(prdsDir, `${conversationId}.md`);
   fs.writeFileSync(filePath, content, "utf-8");

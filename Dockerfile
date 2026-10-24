@@ -26,7 +26,8 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PUPPETEER_CACHE_DIR=/app/.cache/puppeteer \
     PUPPETEER_NO_SANDBOX=1 \
-    DATABASE_URL=file:/app/db/dev.db
+    DATABASE_URL=file:/app/db/dev.db \
+    PRD_SKILL_DIR=/app/skill/prd-builder
 COPY --from=build --chown=node:node /app /app
 RUN mkdir -p /app/db /app/data && chown -R node:node /app/db /app/data
 USER node

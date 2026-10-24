@@ -15,7 +15,8 @@ const execFileAsync = promisify(execFile);
 const WORKSPACE_ROOT = path.join(os.homedir(), "blackbuck-workspace");
 const REGISTRY_FILE = path.join(process.cwd(), "data", "custom-repos.json");
 const JOBS_DIR = path.join(process.cwd(), "data", "repo-jobs");
-const PRD_SKILL_ROOT = path.join(WORKSPACE_ROOT, ".prd-builder-worktree/.claude/skills/prd-builder");
+const PRD_SKILL_ROOT =
+  process.env.PRD_SKILL_DIR ?? path.join(WORKSPACE_ROOT, ".prd-builder-worktree/.claude/skills/prd-builder");
 const SYSTEM_MAP_FILE = path.join(PRD_SKILL_ROOT, "references/system-map/README.md");
 const ALLOWED_ORG = process.env.REPO_ALLOWED_ORG ?? "BLACKBUCK-LABS";
 const MAX_PROGRESS = 12;
