@@ -45,6 +45,8 @@ One place for the decision tables an engineer or QA will check against: threshol
 ### 9. Design
 Link(s) to Figma (or other design tool) mockups. Don't try to describe the UI in prose here — the PRD's job is to narrate logic and flow; the design tool is the source of truth for visuals. If mockups don't exist yet, say so and note who owns producing them.
 
+At the skeleton stage, write one line: whether designs exist, will be supplied, or will be generated in phase 8b. At the full stage, paste the **Design handoff block** returned by the `figma-designer` skill: file link, a table of screens with a frame link and states per screen, design assumptions, and open design gaps. Links only, no embedded images. Mark `Design: not yet available, owner: <name>` if phase 8b was skipped or Figma was unavailable.
+
 ### 10. Data and Instrumentation
 What events/properties need to be tracked (e.g. Mixpanel), and why — tie each tracked event back to a success metric in section 13 where possible, rather than listing events with no stated purpose.
 

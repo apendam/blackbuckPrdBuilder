@@ -11,7 +11,8 @@ Repos the PM has confirmed access to under the `BLACKBUCK-LABS` GitHub org, as o
 | Repo | Vertical(s) | What it is | URL |
 |---|---|---|---|
 | `fms_toll` | Toll | Toll backend — tag lifecycle, hotlisting, recon (per earlier PRD research) | github.com/BLACKBUCK-LABS/fms_toll |
-| `toll-gold` | Toll | "Gold" — likely a premium/priority toll product tier; **unconfirmed**, name-only guess | github.com/BLACKBUCK-LABS/toll-gold |
+| `toll-gold` | Toll | FASTag Gold (ARP v2): subscription with instant top-ups on low balance (confirmed from code, 2026-10-16) | github.com/BLACKBUCK-LABS/toll-gold |
+| `blackbuck-pro-app` | BB Pro | BB Pro, the agent and partner sales app (React Native / Expo); added 2026-10-16, was missing from this index | github.com/BLACKBUCK-LABS/blackbuck-pro-app |
 | `tzf-activation-web-sdk` | TZF | Web SDK for TZF activation flows | github.com/BLACKBUCK-LABS/tzf-activation-web-sdk |
 | `tzf-ops-portal` | TZF | Internal ops-facing portal for TZF | github.com/BLACKBUCK-LABS/tzf-ops-portal |
 | `tzf-fastag` | TZF | FASTag issuance/vendor (NETC) integration | github.com/BLACKBUCK-LABS/tzf-fastag |
